@@ -1,89 +1,128 @@
+// worker.js — now with Microsoft Graph inbound email polling
+
 require('dotenv').config();
-const fs = require('fs');
-const path = require('path');
+const fetch = (...args) => import('node-fetch').then(m => m.default(...args));
 const Database = require('better-sqlite3');
-const fetch = globalThis.fetch;
+const {
+  getGraphAccessToken,
+  fetchUnreadEmails,
+  markMessageAsRead,
+  convertGraphMessage
+} = require('./ms-graph-mail');
+
+// -----------------------------------------
+// Config
+// -----------------------------------------
+const WEBHOOK_URL = process.env.WEBHOOK_URL || "http://webhook:3000/webhook/email";
+const POLL_INTERVAL = 10000; // 10 seconds
+const MAILBOX = process.env.EMAIL_FROM; // mailbox to poll with Graph
+
+if (!MAILBOX) {
+  console.error("ERROR: EMAIL_FROM is required (mailbox to poll)");
+  process.exit(1);
+}
+
+// -----------------------------------------
+// SQLite DB
+// -----------------------------------------
+const path = require('path');
+const fs = require('fs');
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const DB_FILE = path.join(DATA_DIR, 'db.sqlite');
-const LOG_FILE = path.join(DATA_DIR, 'jobs.log');
-const WEBHOOK_URL = process.env.WEBHOOK_URL || 'http://webhook:3000/webhook/email';
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
+const DB_FILE = path.join(DATA_DIR, 'db.sqlite');
 const db = new Database(DB_FILE);
 db.pragma('journal_mode = WAL');
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS jobs (
-  id TEXT PRIMARY KEY,
-  status TEXT NOT NULL,
-  attempts INTEGER NOT NULL DEFAULT 0,
-  next_run_at INTEGER NOT NULL,
-  created_at INTEGER NOT NULL,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  msg_id TEXT UNIQUE,
+  status TEXT,
   payload TEXT,
-  result TEXT
+  created_at TEXT
 );
 `);
 
-const getPendingJob = db.prepare(`SELECT * FROM jobs WHERE status = 'pending' AND next_run_at <= @now ORDER BY created_at ASC LIMIT 1`);
-const markJob = db.prepare(`UPDATE jobs SET status=@status, attempts=@attempts, next_run_at=@next_run_at, result=@result WHERE id=@id`);
-const deleteJob = db.prepare(`DELETE FROM jobs WHERE id = ?`);
+const insertJob = db.prepare(`
+INSERT OR IGNORE INTO jobs (msg_id, status, payload, created_at)
+VALUES (@msg_id, @status, @payload, datetime('now'))
+`);
 
-function logLine(line) {
-  fs.appendFileSync(LOG_FILE, `${new Date().toISOString()} ${line}\n`);
-}
+const getPendingJobs = db.prepare(`SELECT * FROM jobs WHERE status='pending'`);
+const markJobDone = db.prepare(`UPDATE jobs SET status='done' WHERE id=?`);
+const markJobError = db.prepare(`UPDATE jobs SET status='error' WHERE id=?`);
 
-async function deliverJob(job) {
-  const payload = JSON.parse(job.payload);
+// -----------------------------------------
+// Poll Office365 for emails
+// -----------------------------------------
+async function pollMailbox() {
   try {
-    const resp = await fetch(WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      timeout: 15000
-    });
+    const token = await getGraphAccessToken();
+    const messages = await fetchUnreadEmails(token, MAILBOX);
 
-    const text = await resp.text();
-    if (resp.ok) {
-      markJob.run({ status: 'done', attempts: job.attempts + 1, next_run_at: Date.now(), result: text, id: job.id });
-      logLine(`[ok] job ${job.id} -> webhook ${resp.status}`);
-      console.log(`[worker] job ${job.id} delivered (status ${resp.status})`);
-      // delete after success to keep DB small
-      deleteJob.run(job.id);
-    } else {
-      const attempts = job.attempts + 1;
-      const backoff = Math.min(60 * 60 * 1000, 1000 * Math.pow(2, attempts));
-      const nextRun = Date.now() + backoff;
-      markJob.run({ status: 'pending', attempts, next_run_at: nextRun, result: `HTTP ${resp.status}: ${text}`, id: job.id });
-      logLine(`[retry] job ${job.id} -> webhook ${resp.status}. next in ${Math.round(backoff/1000)}s`);
-      console.warn(`[worker] job ${job.id} failed status=${resp.status}. retry in ${Math.round(backoff/1000)}s`);
+    if (messages.length > 0) {
+      console.log(`📩 Found ${messages.length} unread message(s)`);
+    }
+
+    for (const msg of messages) {
+      const converted = convertGraphMessage(msg);
+
+      insertJob.run({
+        msg_id: msg.id,
+        status: "pending",
+        payload: JSON.stringify(converted)
+      });
+
+      // mark message as read so we don't reprocess
+      await markMessageAsRead(token, MAILBOX, msg.id);
     }
   } catch (err) {
-    const attempts = job.attempts + 1;
-    const backoff = Math.min(60 * 60 * 1000, 1000 * Math.pow(2, attempts));
-    const nextRun = Date.now() + backoff;
-    markJob.run({ status: 'pending', attempts, next_run_at: nextRun, result: String(err), id: job.id });
-    logLine(`[error] job ${job.id} -> error: ${String(err)}. next in ${Math.round(backoff/1000)}s`);
-    console.error(`[worker] job ${job.id} error`, err);
+    console.error("Mailbox poll error:", err);
   }
 }
 
-async function loop() {
-  while (true) {
+// -----------------------------------------
+// Process pending jobs → send to webhook
+// -----------------------------------------
+async function processJobs() {
+  const jobs = getPendingJobs.all();
+
+  for (const job of jobs) {
+    console.log("🚀 Sending job to webhook:", job.id);
+
     try {
-      const now = Date.now();
-      const job = getPendingJob.get({ now });
-      if (job) {
-        console.log(`[worker] picked job ${job.id} attempts=${job.attempts}`);
-        await deliverJob(job);
-      } else {
-        await new Promise(r => setTimeout(r, 1500));
+      const resp = await fetch(WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: job.payload
+      });
+
+      if (!resp.ok) {
+        console.error(`Webhook error: ${resp.status}`);
+        markJobError.run(job.id);
+        continue;
       }
+
+      markJobDone.run(job.id);
+      console.log("✅ Job processed:", job.id);
     } catch (err) {
-      console.error('[worker] main loop error', err);
-      await new Promise(r => setTimeout(r, 3000));
+      console.error("Webhook exception:", err);
+      markJobError.run(job.id);
     }
   }
 }
 
-console.log('[worker] starting, webhook:', WEBHOOK_URL);
-loop().catch(e => { console.error(e); process.exit(1); });
+// -----------------------------------------
+// Main Loop
+// -----------------------------------------
+async function mainLoop() {
+  await pollMailbox();
+  await processJobs();
+}
+
+console.log("📡 Worker started. Polling Office365 mailbox:", MAILBOX);
+
+setInterval(mainLoop, POLL_INTERVAL);
+mainLoop();

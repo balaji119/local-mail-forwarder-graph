@@ -1,75 +1,98 @@
-/*
-Helper for Microsoft Graph app-only sendMail using client credentials.
-Requires environment variables:
-MS_GRAPH_TENANT_ID, MS_GRAPH_CLIENT_ID, MS_GRAPH_CLIENT_SECRET, EMAIL_FROM
-*/
-const fetch = globalThis.fetch;
+// ms-graph-mail.js
+//
+// Handles Microsoft Graph email polling for inbound messages
+// Using Client Credentials OAuth2 (Application Permissions)
+//
+// Requires ENV:
+// MS_GRAPH_TENANT_ID
+// MS_GRAPH_CLIENT_ID
+// MS_GRAPH_CLIENT_SECRET
+// EMAIL_FROM (the mailbox to poll)
 
-async function getAccessToken() {
+const fetch = (...args) => import('node-fetch').then(m => m.default(...args));
+const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
+
+async function getGraphAccessToken() {
   const tenant = process.env.MS_GRAPH_TENANT_ID;
   const clientId = process.env.MS_GRAPH_CLIENT_ID;
-  const clientSecret = process.env.MS_GRAPH_CLIENT_SECRET;
+  const secret = process.env.MS_GRAPH_CLIENT_SECRET;
 
-  if (!tenant || !clientId || !clientSecret) {
-    throw new Error('Missing MS Graph env vars');
-  }
-
-  const url = `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`;
-  const params = new URLSearchParams();
-  params.append('grant_type', 'client_credentials');
-  params.append('client_id', clientId);
-  params.append('client_secret', clientSecret);
-  params.append('scope', 'https://graph.microsoft.com/.default');
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params
+  const body = new URLSearchParams({
+    client_id: clientId,
+    client_secret: secret,
+    scope: "https://graph.microsoft.com/.default",
+    grant_type: "client_credentials"
   });
 
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`Token endpoint error ${res.status}: ${txt}`);
-  }
-  const j = await res.json();
-  return j.access_token;
-}
-
-async function sendMailOffice365({ to, subject, htmlBody, textBody }) {
-  const token = await getAccessToken();
-  const sender = process.env.EMAIL_FROM;
-  if (!sender) throw new Error('EMAIL_FROM not set');
-
-  const graphUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(sender)}/sendMail`;
-
-  const message = {
-    message: {
-      subject: subject,
-      body: {
-        contentType: 'HTML',
-        content: htmlBody || textBody || ''
-      },
-      toRecipients: [
-        { emailAddress: { address: to } }
-      ]
+  const resp = await fetch(
+    `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body
     }
-  };
+  );
 
-  const res = await fetch(graphUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(message)
-  });
-
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`Graph sendMail error ${res.status}: ${txt}`);
+  if (!resp.ok) {
+    const t = await resp.text();
+    throw new Error("Graph token error: " + t);
   }
 
-  return { ok: true };
+  const json = await resp.json();
+  return json.access_token;
 }
 
-module.exports = { sendMailOffice365 };
+// Fetch unread emails from inbox
+async function fetchUnreadEmails(accessToken, mailbox) {
+  const url = `${GRAPH_BASE}/users/${encodeURIComponent(mailbox)}/mailFolders/Inbox/messages?$filter=isRead eq false&$top=10`;
+
+  const resp = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+
+  if (!resp.ok) {
+    const t = await resp.text();
+    throw new Error("Graph fetchUnreadEmails error: " + t);
+  }
+
+  const data = await resp.json();
+  return data.value || [];
+}
+
+// Mark message as read
+async function markMessageAsRead(accessToken, mailbox, id) {
+  const url = `${GRAPH_BASE}/users/${encodeURIComponent(mailbox)}/messages/${id}`;
+
+  const resp = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ isRead: true })
+  });
+
+  if (!resp.ok) {
+    const t = await resp.text();
+    console.error("Graph markMessageAsRead error:", t);
+  }
+}
+
+// Convert Graph message → webhook email format
+function convertGraphMessage(msg) {
+  return {
+    from: msg.from?.emailAddress?.address || "",
+    subject: msg.subject || "",
+    text: msg.bodyPreview || "",
+    html: msg.body?.content || "",
+    attachments: msg.attachments || [],
+    raw: msg.body?.content || ""
+  };
+}
+
+module.exports = {
+  getGraphAccessToken,
+  fetchUnreadEmails,
+  markMessageAsRead,
+  convertGraphMessage
+};

@@ -9,12 +9,13 @@
     "start:webhook": "node webhook-server.js"
   },
   "dependencies": {
+    "better-sqlite3": "^8.2.0",
     "dotenv": "^16.0.0",
+    "express": "^4.18.2",
     "follow-redirects": "^1.15.0",
     "mailparser": "^3.6.4",
+    "node-fetch": "^2.7.0",
     "smtp-server": "^3.8.0",
-    "better-sqlite3": "^8.2.0",
-    "express": "^4.18.2",
     "uuid": "^9.0.0"
   },
   "engines": {
