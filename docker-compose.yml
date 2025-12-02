@@ -1,23 +1,10 @@
 version: "3.8"
 services:
-  smtp:
-    build: .
-    container_name: local_smtp
-    command: ["node", "smtp-server.js"]
-    ports:
-      - "2525:2525"
-    volumes:
-      - ./data:/data
-      - ./logs:/usr/src/app/logs
-    env_file:
-      - .env
-
   worker:
     build: .
     container_name: local_worker
     command: ["node", "worker.js"]
     depends_on:
-      - smtp
       - webhook
     volumes:
       - ./data:/data

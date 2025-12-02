@@ -1,17 +1,22 @@
-FROM node:20-alpine
+# Dockerfile (recommended: Debian slim)
+FROM node:20-bullseye-slim
 
 WORKDIR /usr/src/app
 
-# system deps for better-sqlite3
-RUN apk add --no-cache build-base python3 sqlite-dev
+# system deps for building native modules (better-sqlite3)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential python3 make g++ libc6-dev libsqlite3-dev ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
+# copy package files and install inside the image (ensures native modules are built for linux)
 COPY package.json package-lock.json* ./
-RUN npm install --no-audit --no-fund
+RUN npm ci --no-audit --no-fund
 
+# copy app code
 COPY . .
 
 # create data dirs
-RUN mkdir -p /usr/src/app/data/attachments /usr/src/app/data/webhook-logs
+RUN mkdir -p /usr/src/app/data/attachments /usr/src/app/data/webhook-logs /usr/src/app/logs
 
 EXPOSE 2525 3000
 

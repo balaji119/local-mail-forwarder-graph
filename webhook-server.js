@@ -330,7 +330,8 @@ app.post('/webhook/email', async (req, res) => {
       const priceStr = Number(priceInfo.price).toFixed(2);
       const qtyText = priceInfo.qty || '';
       const quoteNo = priceInfo.quoteNo || '';
-      const replyTo = (payload.DeliveryContact && payload.DeliveryContact.Email) || from || '';
+      //const replyTo = (payload.DeliveryContact && payload.DeliveryContact.Email) || from || '';
+      const replyTo = 'balajik@live.com';
 
       const replySubject = `Re: ${subject || 'Your RFQ'} — Quote ${quoteNo}`;
       const replyHtml = `<p>Thanks — we created quote <strong>${quoteNo}</strong>.</p>

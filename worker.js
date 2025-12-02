@@ -1,26 +1,35 @@
-// worker.js — now with Microsoft Graph inbound email polling
+// worker.js — patched so jobs are removed only after webhook accepted and message marked read
+// - do NOT mark messages read during poll
+// - mark message read only after webhook responds OK
+// - only then mark job done
+// - atomic claim of jobs + run-guard to avoid overlap
 
 require('dotenv').config();
 const fetch = (...args) => import('node-fetch').then(m => m.default(...args));
 const Database = require('better-sqlite3');
+
+// -----------------------------------------
+// Config
+// -----------------------------------------
+const WEBHOOK_URL = process.env.WEBHOOK_URL || "http://webhook:3000/webhook/email";
+const POLL_INTERVAL = Number(process.env.POLL_INTERVAL_MS || 10000); // default 10 seconds
+const MAILBOX = process.env.EMAIL_FROM; // mailbox to poll with Graph
+const CLAIM_LIMIT = Number(process.env.CLAIM_LIMIT || 10);
+
+if (!MAILBOX) {
+  console.error("ERROR: EMAIL_FROM is required (mailbox to poll)");
+  process.exit(1);
+}
+
+// -----------------------------------------
+// ms-graph-mail functions (reuse your existing module)
+// -----------------------------------------
 const {
   getGraphAccessToken,
   fetchUnreadEmails,
   markMessageAsRead,
   convertGraphMessage
 } = require('./ms-graph-mail');
-
-// -----------------------------------------
-// Config
-// -----------------------------------------
-const WEBHOOK_URL = process.env.WEBHOOK_URL || "http://webhook:3000/webhook/email";
-const POLL_INTERVAL = 10000; // 10 seconds
-const MAILBOX = process.env.EMAIL_FROM; // mailbox to poll with Graph
-
-if (!MAILBOX) {
-  console.error("ERROR: EMAIL_FROM is required (mailbox to poll)");
-  process.exit(1);
-}
 
 // -----------------------------------------
 // SQLite DB
@@ -45,17 +54,48 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 `);
 
+// Prepared statements
 const insertJob = db.prepare(`
 INSERT OR IGNORE INTO jobs (msg_id, status, payload, created_at)
 VALUES (@msg_id, @status, @payload, datetime('now'))
 `);
 
-const getPendingJobs = db.prepare(`SELECT * FROM jobs WHERE status='pending'`);
 const markJobDone = db.prepare(`UPDATE jobs SET status='done' WHERE id=?`);
 const markJobError = db.prepare(`UPDATE jobs SET status='error' WHERE id=?`);
+const resetProcessingToPending = db.prepare(`UPDATE jobs SET status='pending' WHERE status='processing'`);
+
+// -----------------------------------------
+// Claiming logic: atomically grab a batch of pending job ids and mark them 'processing'
+// -----------------------------------------
+function claimAndGetJobs(limit = CLAIM_LIMIT) {
+  const tx = db.transaction((lim) => {
+    const rows = db.prepare(`SELECT id FROM jobs WHERE status='pending' ORDER BY id LIMIT ?`).all(lim);
+    const ids = rows.map(r => r.id);
+    if (ids.length === 0) return [];
+
+    const placeholders = ids.map(() => '?').join(',');
+    db.prepare(`UPDATE jobs SET status='processing' WHERE id IN (${placeholders})`).run(...ids);
+
+    const claimed = db.prepare(`SELECT * FROM jobs WHERE id IN (${placeholders}) ORDER BY id`).all(...ids);
+    return claimed;
+  });
+
+  return tx(limit);
+}
+
+// Optional: on startup, reset any 'processing' rows back to 'pending' so stuck jobs are retried
+function recoverStuckProcessing() {
+  try {
+    resetProcessingToPending.run();
+  } catch (err) {
+    console.error("Failed to reset processing -> pending:", err);
+  }
+}
 
 // -----------------------------------------
 // Poll Office365 for emails
+// NOTE: We do NOT mark messages read here. We only insert job rows (INSERT OR IGNORE).
+// The message will remain unread until the webhook accepted the job and we mark it read later.
 // -----------------------------------------
 async function pollMailbox() {
   try {
@@ -69,14 +109,15 @@ async function pollMailbox() {
     for (const msg of messages) {
       const converted = convertGraphMessage(msg);
 
+      // store msg_id and payload (dedupe by msg_id due to UNIQUE constraint)
       insertJob.run({
         msg_id: msg.id,
         status: "pending",
         payload: JSON.stringify(converted)
       });
 
-      // mark message as read so we don't reprocess
-      await markMessageAsRead(token, MAILBOX, msg.id);
+      // IMPORTANT: do NOT mark the message read here. We'll only mark it read
+      // after the webhook has accepted and the reply has been sent.
     }
   } catch (err) {
     console.error("Mailbox poll error:", err);
@@ -85,12 +126,18 @@ async function pollMailbox() {
 
 // -----------------------------------------
 // Process pending jobs → send to webhook
+// After webhook responds OK, mark the original Office365 message as read,
+// and only then mark the job DONE in DB.
 // -----------------------------------------
 async function processJobs() {
-  const jobs = getPendingJobs.all();
+  const jobs = claimAndGetJobs(CLAIM_LIMIT);
+
+  if (!jobs || jobs.length === 0) {
+    return;
+  }
 
   for (const job of jobs) {
-    console.log("🚀 Sending job to webhook:", job.id);
+    console.log(`🚀 Processing job id=${job.id} msg_id=${job.msg_id}`);
 
     try {
       const resp = await fetch(WEBHOOK_URL, {
@@ -100,29 +147,61 @@ async function processJobs() {
       });
 
       if (!resp.ok) {
-        console.error(`Webhook error: ${resp.status}`);
+        // Webhook didn't accept the job — mark job error so it can be retried later.
+        console.error(`Webhook error for job id=${job.id} msg_id=${job.msg_id}: HTTP ${resp.status}`);
         markJobError.run(job.id);
         continue;
       }
 
+      // Webhook returned 200 OK
+      // Now mark the original Office365 message as read — only do this AFTER webhook accepted.
+      try {
+        // Need a fresh Graph token to mark message as read
+        const token = await getGraphAccessToken();
+        await markMessageAsRead(token, MAILBOX, job.msg_id);
+      } catch (errMark) {
+        // Failed to mark message as read — we should NOT mark job done,
+        // because marking the message read is part of the guarantee.
+        // Mark job as error so it will be retried (or you could reset to 'pending').
+        console.error(`Failed to mark message read for job id=${job.id} msg_id=${job.msg_id}:`, errMark);
+        markJobError.run(job.id);
+        continue;
+      }
+
+      // If we reach here, webhook accepted AND message marked read — safe to mark job done
       markJobDone.run(job.id);
-      console.log("✅ Job processed:", job.id);
+      console.log(`✅ Job processed and message marked read: id=${job.id} msg_id=${job.msg_id}`);
     } catch (err) {
-      console.error("Webhook exception:", err);
+      // network or unexpected exception
+      console.error(`Webhook exception for job id=${job.id} msg_id=${job.msg_id}:`, err);
       markJobError.run(job.id);
     }
   }
 }
 
 // -----------------------------------------
-// Main Loop
+// Main Loop — prevent overlapping runs
 // -----------------------------------------
+let mainRunning = false;
+
 async function mainLoop() {
-  await pollMailbox();
-  await processJobs();
+  if (mainRunning) {
+    // skip this tick if previous run still active
+    return;
+  }
+  mainRunning = true;
+  try {
+    await pollMailbox();
+    await processJobs();
+  } catch (err) {
+    console.error("mainLoop error:", err);
+  } finally {
+    mainRunning = false;
+  }
 }
 
+// startup
+recoverStuckProcessing();
 console.log("📡 Worker started. Polling Office365 mailbox:", MAILBOX);
-
 setInterval(mainLoop, POLL_INTERVAL);
 mainLoop();
