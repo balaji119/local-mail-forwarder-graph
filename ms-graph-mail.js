@@ -78,6 +78,43 @@ async function markMessageAsRead(accessToken, mailbox, id) {
   }
 }
 
+
+async function sendMailOffice365({ to, subject, htmlBody, textBody }) {
+  const token = await getGraphAccessToken();
+  const sender = process.env.EMAIL_FROM;
+  if (!sender) throw new Error('EMAIL_FROM env var not set');
+
+  const graphUrl = `${GRAPH_BASE}/users/${encodeURIComponent(sender)}/sendMail`;
+  const message = {
+    message: {
+      subject: subject || '',
+      body: {
+        contentType: 'HTML',
+        content: htmlBody || textBody || ''
+      },
+      toRecipients: [
+        { emailAddress: { address: to } }
+      ]
+    }
+  };
+
+  const res = await fetch(graphUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(message)
+  });
+
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`Graph sendMail error ${res.status}: ${txt}`);
+  }
+
+  return { ok: true };
+}
+
 // Convert Graph message → webhook email format
 function convertGraphMessage(msg) {
   return {
@@ -94,5 +131,6 @@ module.exports = {
   getGraphAccessToken,
   fetchUnreadEmails,
   markMessageAsRead,
-  convertGraphMessage
+  convertGraphMessage,
+  sendMailOffice365
 };
