@@ -6,7 +6,8 @@
   "scripts": {
     "start:smtp": "node smtp-server.js",
     "start:worker": "node worker.js",
-    "start:webhook": "node webhook-server.js"
+    "start:webhook": "node webhook-server.js",
+    "start:admin": "node admin-server.js"
   },
   "dependencies": {
     "better-sqlite3": "^8.2.0",

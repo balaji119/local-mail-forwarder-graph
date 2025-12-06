@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Mapping & Logs Manager</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+        }
+        
+        h1 {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+        
+        .subtitle {
+            opacity: 0.8;
+            font-size: 14px;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #ddd;
+        }
+        
+        .tab {
+            padding: 12px 24px;
+            background: #e0e0e0;
+            border: none;
+            cursor: pointer;
+            border-radius: 8px 8px 0 0;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+        
+        .tab:hover {
+            background: #d0d0d0;
+        }
+        
+        .tab.active {
+            background: #3498db;
+            color: white;
+        }
+        
+        .tab-content {
+            display: none;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #555;
+        }
+        
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #2980b9;
+        }
+        
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+        
+        .btn-success {
+            background: #27ae60;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #229954;
+        }
+        
+        .mapping-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        
+        .mapping-table th,
+        .mapping-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .mapping-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #555;
+        }
+        
+        .mapping-table tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .key-cell {
+            font-weight: 500;
+            color: #2c3e50;
+            max-width: 400px;
+            word-break: break-word;
+        }
+        
+        .value-cell {
+            color: #555;
+            max-width: 500px;
+            word-break: break-word;
+        }
+        
+        .actions-cell {
+            white-space: nowrap;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+        
+        .alert {
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .log-viewer {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 600px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        .log-controls {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .log-line {
+            margin-bottom: 2px;
+        }
+        
+        .log-line[data-level="ERROR"] {
+            color: #f48771;
+        }
+        
+        .log-line[data-level="WARN"] {
+            color: #dcdcaa;
+        }
+        
+        .log-line[data-level="INFO"] {
+            color: #4ec9b0;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Stock Mapping & Logs Manager</h1>
+            <div class="subtitle">Manage stock mappings and view application logs</div>
+        </header>
+        
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('mapping')">Stock Mapping</button>
+            <button class="tab" onclick="switchTab('logs')">Logs</button>
+        </div>
+        
+        <div id="mapping-tab" class="tab-content active">
+            <div id="mapping-alert"></div>
+            
+            <div class="form-group">
+                <label for="new-key">Stock Key (from email):</label>
+                <input type="text" id="new-key" placeholder="e.g., 200gsm Synthetic">
+            </div>
+            
+            <div class="form-group">
+                <label for="new-value">Stock Code (for PrintIQ):</label>
+                <input type="text" id="new-value" placeholder="e.g., Substrate: Yupo FPU250 UV 1320mm c3 200gsm R">
+            </div>
+            
+            <button class="btn btn-primary" onclick="addMapping()">Add Mapping</button>
+            <button class="btn btn-success" onclick="loadMappings()" style="margin-left: 10px;">Refresh</button>
+            
+            <div id="mapping-table-container"></div>
+        </div>
+        
+        <div id="logs-tab" class="tab-content">
+            <div class="log-controls">
+                <button class="btn btn-primary" onclick="loadLatestLogs()">Refresh Logs</button>
+                <label style="margin-left: 20px;">
+                    Lines to show:
+                    <input type="number" id="log-lines" value="100" min="10" max="1000" style="width: 80px; padding: 5px; margin-left: 5px;">
+                </label>
+            </div>
+            <div id="log-viewer" class="log-viewer">
+                <div class="loading">Loading logs...</div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function switchTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.getElementById(tabName + '-tab').classList.add('active');
+            event.target.classList.add('active');
+            
+            if (tabName === 'mapping') {
+                loadMappings();
+            } else if (tabName === 'logs') {
+                loadLatestLogs();
+            }
+        }
+        
+        function showAlert(containerId, message, type) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+            setTimeout(() => {
+                container.innerHTML = '';
+            }, 5000);
+        }
+        
+        async function loadMappings() {
+            try {
+                const response = await fetch('/api/stock-mapping');
+                const mapping = await response.json();
+                displayMappings(mapping);
+            } catch (error) {
+                showAlert('mapping-alert', 'Error loading mappings: ' + error.message, 'error');
+            }
+        }
+        
+        function displayMappings(mapping) {
+            const container = document.getElementById('mapping-table-container');
+            const keys = Object.keys(mapping);
+            
+            if (keys.length === 0) {
+                container.innerHTML = '<div class="empty-state">No stock mappings found. Add one above to get started.</div>';
+                return;
+            }
+            
+            let html = '<table class="mapping-table"><thead><tr><th>Stock Key</th><th>Stock Code</th><th>Actions</th></tr></thead><tbody>';
+            
+            keys.forEach(key => {
+                const value = mapping[key];
+                html += `
+                    <tr>
+                        <td class="key-cell">${escapeHtml(key)}</td>
+                        <td class="value-cell">${escapeHtml(value)}</td>
+                        <td class="actions-cell">
+                            <button class="btn btn-danger" onclick="deleteMapping('${escapeHtml(key).replace(/'/g, "\\'")}')">Delete</button>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+        
+        async function addMapping() {
+            const key = document.getElementById('new-key').value.trim();
+            const value = document.getElementById('new-value').value.trim();
+            
+            if (!key || !value) {
+                showAlert('mapping-alert', 'Please enter both key and value', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/stock-mapping/${encodeURIComponent(key)}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ value })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showAlert('mapping-alert', 'Mapping added successfully', 'success');
+                    document.getElementById('new-key').value = '';
+                    document.getElementById('new-value').value = '';
+                    loadMappings();
+                } else {
+                    showAlert('mapping-alert', 'Error: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showAlert('mapping-alert', 'Error adding mapping: ' + error.message, 'error');
+            }
+        }
+        
+        async function deleteMapping(key) {
+            if (!confirm(`Are you sure you want to delete the mapping for "${key}"?`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/stock-mapping/${encodeURIComponent(key)}`, {
+                    method: 'DELETE'
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showAlert('mapping-alert', 'Mapping deleted successfully', 'success');
+                    loadMappings();
+                } else {
+                    showAlert('mapping-alert', 'Error: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showAlert('mapping-alert', 'Error deleting mapping: ' + error.message, 'error');
+            }
+        }
+        
+        async function loadLatestLogs() {
+            const lines = parseInt(document.getElementById('log-lines').value) || 100;
+            const viewer = document.getElementById('log-viewer');
+            viewer.innerHTML = '<div class="loading">Loading logs...</div>';
+            
+            try {
+                const response = await fetch(`/api/logs/latest/${lines}`);
+                const data = await response.json();
+                
+                if (data.lines.length === 0) {
+                    viewer.innerHTML = '<div class="empty-state">No log entries found</div>';
+                    return;
+                }
+                
+                let html = `<div style="margin-bottom: 10px; color: #888;">Showing ${data.showing} of ${data.totalLines} lines from ${data.filename}</div>`;
+                
+                data.lines.forEach(line => {
+                    const level = extractLogLevel(line);
+                    html += `<div class="log-line" data-level="${level}">${escapeHtml(line)}</div>`;
+                });
+                
+                viewer.innerHTML = html;
+                viewer.scrollTop = viewer.scrollHeight;
+            } catch (error) {
+                viewer.innerHTML = `<div class="alert alert-error">Error loading logs: ${error.message}</div>`;
+            }
+        }
+        
+        function extractLogLevel(line) {
+            if (line.includes('[ERROR]')) return 'ERROR';
+            if (line.includes('[WARN]')) return 'WARN';
+            if (line.includes('[INFO]')) return 'INFO';
+            return 'INFO';
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Load mappings on page load
+        loadMappings();
+        
+        // Auto-refresh logs every 5 seconds
+        setInterval(() => {
+            if (document.getElementById('logs-tab').classList.contains('active')) {
+                loadLatestLogs();
+            }
+        }, 5000);
+    </script>
+</body>
+</html>

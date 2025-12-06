@@ -21,6 +21,6 @@ RUN npm rebuild better-sqlite3
 # create data dirs
 RUN mkdir -p /usr/src/app/data/attachments /usr/src/app/data/webhook-logs /usr/src/app/logs
 
-EXPOSE 2525 3000
+EXPOSE 2525 3000 3001
 
 CMD ["node", "smtp-server.js"]

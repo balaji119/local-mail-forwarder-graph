@@ -6,7 +6,6 @@ require('dotenv').config();
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
 
 const { sendMailOffice365 } = require('./ms-graph-mail');
 const { processQuote } = require('./quote-processor');
