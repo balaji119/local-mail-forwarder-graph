@@ -11,6 +11,7 @@ const https = require('https');
 const { sendMailOffice365 } = require('./ms-graph-mail');
 const { processQuote } = require('./quote-processor');
 const { convertWithOpenAI } = require('./openai-converter');
+const logger = require('./logger');
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
@@ -26,17 +27,17 @@ app.post('/webhook/email', async (req, res) => {
     const { from, subject, text, html, attachments, raw } = req.body;
     const emailText = `${subject || ''}\n\n${text || ''}\n\n${raw || ''}`;
 
-    console.log("Incoming email from:", from);
-    console.log("Subject:", subject);
+    logger.log("Incoming email from:", from);
+    logger.log("Subject:", subject);
 
     const payload = await convertWithOpenAI(emailText);
-    console.log("Payload:", JSON.stringify(payload, null, 2));
+    logger.log("Payload:", JSON.stringify(payload, null, 2));
 
     // Process the quote using the extracted module
     const quoteResult = await processQuote(payload, { logDir: LOG_DIR });
     
     if (!quoteResult.success) {
-      console.error("Failed to process quote:", quoteResult.error);
+      logger.error("Failed to process quote:", quoteResult.error);
       return res.status(500).json({ ok: false, error: quoteResult.error, debug: quoteResult.debug });
     }
 
@@ -63,15 +64,15 @@ app.post('/webhook/email', async (req, res) => {
         }
       } catch (err) {
         replyResult = { ok: false, error: String(err) };
-        console.error("Error sending reply via Graph:", err);
+        logger.error("Error sending reply via Graph:", err);
       }
     } else {
-      console.warn("No price found in createResult, not sending reply.");
+      logger.warn("No price found in createResult, not sending reply.");
     }
 
     res.json({ ok: true, createResult, priceInfo, replyResult, shouldMarkAsRead });
   } catch (err) {
-    console.error("Webhook error:", err);
+    logger.error("Webhook error:", err);
     res.status(500).json({ ok:false, error: String(err) });
   }
 });

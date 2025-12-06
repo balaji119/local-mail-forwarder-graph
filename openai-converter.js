@@ -3,6 +3,9 @@
    Extracted for testability and separation of concerns.
 */
 require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
+const logger = require('./logger');
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
@@ -120,6 +123,51 @@ function buildJobTitleFromExtracted(ex) {
   return parts.length ? parts.join(" - ") : null;
 }
 
+// Load stock mapping from external JSON file
+function loadStockMapping() {
+  const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+  const mappingFile = path.join(DATA_DIR, 'stock-mapping.json');
+  
+  try {
+    if (fs.existsSync(mappingFile)) {
+      const content = fs.readFileSync(mappingFile, 'utf8');
+      const mapping = JSON.parse(content);
+      return mapping;
+    }
+  } catch (err) {
+    logger.warn(`Failed to load stock mapping from ${mappingFile}:`, err.message);
+  }
+  
+  // Return empty object if file doesn't exist or can't be parsed
+  return {};
+}
+
+function getStockCodeFromMapping(stockValue) {
+  if (!stockValue || typeof stockValue !== 'string') {
+    return null;
+  }
+  
+  const mapping = loadStockMapping();
+  if (!mapping || Object.keys(mapping).length === 0) {
+    return null;
+  }
+  
+  // Try exact match first (case-sensitive)
+  if (mapping[stockValue]) {
+    return mapping[stockValue];
+  }
+  
+  // Try case-insensitive match
+  const stockLower = stockValue.toLowerCase().trim();
+  for (const [key, value] of Object.entries(mapping)) {
+    if (key.toLowerCase().trim() === stockLower) {
+      return value;
+    }
+  }
+  
+  return null;
+}
+
 // Build "final" JSON shape from the compact extracted model output
 function buildFinalJsonFromExtracted(extracted, rawText) {
   // Ensure default structure and hard-coded fields as requested
@@ -143,7 +191,10 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
         }
       ],
       JobOperations: [
-        { OperationName: "Preflight" }
+        { OperationName: "Preflight" },
+        { OperationName: "* PROOF PDF" },
+        { OperationName: "*FILE SETUP ADS" },
+        { OperationName: "Auto to Press" }
       ]
     },
     SelectedQuantity: {
@@ -171,6 +222,14 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
 
   final.CustomProduct.FinishSizeWidth = width;
   final.CustomProduct.FinishSizeHeight = height;
+
+  // Update StockCode based on STOCK value from email using mapping file
+  if (extracted.stock) {
+    const mappedStockCode = getStockCodeFromMapping(extracted.stock);
+    if (mappedStockCode) {
+      final.CustomProduct.Sections[0].StockCode = mappedStockCode;
+    }
+  }
 
   // Titles/notes
   final.JobTitle = buildJobTitleFromExtracted(extracted);
@@ -276,7 +335,7 @@ async function callOpenAIForExtractor(rawText) {
 async function convertWithOpenAI(rawText) {
   // 1) ask model for compact extractor JSON
   const modelText = await callOpenAIForExtractor(rawText);
-  console.log("Open AI output: ", modelText)
+  logger.log("Open AI output: ", modelText)
 
   // 2) parse model JSON
   let extracted;
@@ -311,13 +370,13 @@ async function processEmailWithOpenAI(emailText, options = {}) {
   
   try {
     if (enableLogging) {
-      console.log("Processing email text (first 200 chars):", (emailText || "").substring(0, 200));
+      logger.log("Processing email text (first 200 chars):", (emailText || "").substring(0, 200));
     }
     
     const payload = await convertWithOpenAI(emailText);
     
     if (enableLogging) {
-      console.log("Payload (final JSON):", JSON.stringify(payload, null, 2));
+      logger.log("Payload (final JSON):", JSON.stringify(payload, null, 2));
     }
     
     return {
@@ -327,7 +386,7 @@ async function processEmailWithOpenAI(emailText, options = {}) {
     };
     
   } catch (error) {
-    console.error("OpenAI conversion error:", error);
+    logger.error("OpenAI conversion error:", error);
     return {
       success: false,
       error: String(error),

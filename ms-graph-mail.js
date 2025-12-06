@@ -10,6 +10,7 @@
 // EMAIL_FROM (the mailbox to poll)
 
 const fetch = (...args) => import('node-fetch').then(m => m.default(...args));
+const logger = require('./logger');
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
 async function getGraphAccessToken() {
@@ -74,7 +75,7 @@ async function markMessageAsRead(accessToken, mailbox, id) {
 
   if (!resp.ok) {
     const t = await resp.text();
-    console.error("Graph markMessageAsRead error:", t);
+    logger.error("Graph markMessageAsRead error:", t);
   }
 }
 

@@ -6,6 +6,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const logger = require('./logger');
 
 const PRINTIQ_USER = process.env.PRINTIQ_USER;
 const PRINTIQ_PASSWORD = process.env.PRINTIQ_PASSWORD;
@@ -151,7 +152,7 @@ async function processQuote(payload, options = {}) {
     // Get authentication token
     const tokenResult = await getPrintIQToken();
     if (!tokenResult.success) {
-      console.error("Failed to obtain token:", tokenResult.raw || tokenResult.reason);
+      logger.error("Failed to obtain token:", tokenResult.raw || tokenResult.reason);
       return {
         success: false,
         error: 'failed to obtain printiq token',
@@ -169,8 +170,8 @@ async function processQuote(payload, options = {}) {
       fs.writeFileSync(path.join(logDir, `create-${stamp}.json`), JSON.stringify({ createResult }, null, 2));
     }
 
-    console.log("Create result status:", createResult.status);
-    console.log("Create result body:", createResult.body);
+    logger.log("Create result status:", createResult.status);
+    logger.log("Create result body:", createResult.body);
 
     // Extract price information
     const priceInfo = extractPriceInfo(createResult);
@@ -183,7 +184,7 @@ async function processQuote(payload, options = {}) {
     };
 
   } catch (error) {
-    console.error("Quote processing error:", error);
+    logger.error("Quote processing error:", error);
     return {
       success: false,
       error: String(error),

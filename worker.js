@@ -7,6 +7,7 @@
 require('dotenv').config();
 const fetch = (...args) => import('node-fetch').then(m => m.default(...args));
 const Database = require('better-sqlite3');
+const logger = require('./logger');
 
 // -----------------------------------------
 // Config
@@ -88,7 +89,7 @@ function recoverStuckProcessing() {
   try {
     resetProcessingToPending.run();
   } catch (err) {
-    console.error("Failed to reset processing -> pending:", err);
+    logger.error("Failed to reset processing -> pending:", err);
   }
 }
 
@@ -103,7 +104,7 @@ async function pollMailbox() {
     const messages = await fetchUnreadEmails(token, MAILBOX);
 
     if (messages.length > 0) {
-      console.log(`📩 Found ${messages.length} unread message(s)`);
+      logger.log(`Found ${messages.length} unread message(s)`);
     }
 
     for (const msg of messages) {
@@ -120,7 +121,7 @@ async function pollMailbox() {
       // after the webhook has accepted and the reply has been sent.
     }
   } catch (err) {
-    console.error("Mailbox poll error:", err);
+    logger.error("Mailbox poll error:", err);
   }
 }
 
@@ -137,7 +138,7 @@ async function processJobs() {
   }
 
   for (const job of jobs) {
-    console.log(`🚀 Processing job id=${job.id} msg_id=${job.msg_id}`);
+    logger.log(`Processing job id=${job.id} msg_id=${job.msg_id}`);
 
     try {
       const resp = await fetch(WEBHOOK_URL, {
@@ -148,7 +149,7 @@ async function processJobs() {
 
       if (!resp.ok) {
         // Webhook didn't accept the job — mark job error so it can be retried later.
-        console.error(`Webhook error for job id=${job.id} msg_id=${job.msg_id}: HTTP ${resp.status}`);
+        logger.error(`Webhook error for job id=${job.id} msg_id=${job.msg_id}: HTTP ${resp.status}`);
         markJobError.run(job.id);
         continue;
       }
@@ -158,7 +159,7 @@ async function processJobs() {
       try {
         webhookResult = await resp.json();
       } catch (parseErr) {
-        console.error(`Failed to parse webhook response for job id=${job.id}:`, parseErr);
+        logger.error(`Failed to parse webhook response for job id=${job.id}:`, parseErr);
         markJobError.run(job.id);
         continue;
       }
@@ -169,7 +170,7 @@ async function processJobs() {
       if (!shouldMarkAsRead) {
         // Either no price was found or reply was not sent - don't mark as read so it can be retried
         const reason = webhookResult?.replyResult?.reason || webhookResult?.replyResult?.error || 'no-price-or-reply-failed';
-        console.warn(`⚠️  Not marking as read for job id=${job.id} msg_id=${job.msg_id}. Reason: ${reason}`);
+        logger.warn(`Not marking as read for job id=${job.id} msg_id=${job.msg_id}. Reason: ${reason}`);
         markJobError.run(job.id);
         continue;
       }
@@ -183,17 +184,17 @@ async function processJobs() {
         // Failed to mark message as read — we should NOT mark job done,
         // because marking the message read is part of the guarantee.
         // Mark job as error so it will be retried (or you could reset to 'pending').
-        console.error(`Failed to mark message read for job id=${job.id} msg_id=${job.msg_id}:`, errMark);
+        logger.error(`Failed to mark message read for job id=${job.id} msg_id=${job.msg_id}:`, errMark);
         markJobError.run(job.id);
         continue;
       }
 
       // If we reach here, webhook accepted AND reply sent AND message marked read — safe to mark job done
       markJobDone.run(job.id);
-      console.log(`✅ Job processed, reply sent, and message marked read: id=${job.id} msg_id=${job.msg_id}`);
+      logger.log(`Job processed, reply sent, and message marked read: id=${job.id} msg_id=${job.msg_id}`);
     } catch (err) {
       // network or unexpected exception
-      console.error(`Webhook exception for job id=${job.id} msg_id=${job.msg_id}:`, err);
+      logger.error(`Webhook exception for job id=${job.id} msg_id=${job.msg_id}:`, err);
       markJobError.run(job.id);
     }
   }
@@ -214,7 +215,7 @@ async function mainLoop() {
     await pollMailbox();
     await processJobs();
   } catch (err) {
-    console.error("mainLoop error:", err);
+    logger.error("mainLoop error:", err);
   } finally {
     mainRunning = false;
   }
@@ -222,6 +223,6 @@ async function mainLoop() {
 
 // startup
 recoverStuckProcessing();
-console.log("📡 Worker started. Polling Office365 mailbox:", MAILBOX);
+console.log("Worker started. Polling Office365 mailbox:", MAILBOX);
 setInterval(mainLoop, POLL_INTERVAL);
 mainLoop();
