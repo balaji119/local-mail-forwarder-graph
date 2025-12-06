@@ -42,13 +42,13 @@ app.post('/webhook/email', async (req, res) => {
 
     const { createResult, priceInfo } = quoteResult;
     let replyResult = { ok: false, reason: 'no-price-found' };
+    let shouldMarkAsRead = false;
 
     if (priceInfo && typeof priceInfo.price !== 'undefined' && priceInfo.price !== null) {
       const priceStr = Number(priceInfo.price).toFixed(2);
       const qtyText = priceInfo.qty || '';
       const quoteNo = priceInfo.quoteNo || '';
-      //const replyTo = (payload.DeliveryContact && payload.DeliveryContact.Email) || from || '';
-      const replyTo = 'balajik@live.com';
+      const replyTo = process.env.REPLY_TO_EMAIL || (payload.DeliveryContact && payload.DeliveryContact.Email) || from || '';
 
       const replySubject = `Re: ${subject || 'Your RFQ'} — Quote ${quoteNo}`;
       const replyHtml = `<p>Thanks — we created quote <strong>${quoteNo}</strong>.</p>
@@ -57,6 +57,10 @@ app.post('/webhook/email', async (req, res) => {
 
       try {
         replyResult = await sendMailOffice365({ to: replyTo, subject: replySubject, htmlBody: replyHtml });
+        // Only mark as read if reply was successfully sent
+        if (replyResult.ok) {
+          shouldMarkAsRead = true;
+        }
       } catch (err) {
         replyResult = { ok: false, error: String(err) };
         console.error("Error sending reply via Graph:", err);
@@ -65,7 +69,7 @@ app.post('/webhook/email', async (req, res) => {
       console.warn("No price found in createResult, not sending reply.");
     }
 
-    res.json({ ok: true, createResult, priceInfo, replyResult });
+    res.json({ ok: true, createResult, priceInfo, replyResult, shouldMarkAsRead });
   } catch (err) {
     console.error("Webhook error:", err);
     res.status(500).json({ ok:false, error: String(err) });

@@ -153,8 +153,28 @@ async function processJobs() {
         continue;
       }
 
-      // Webhook returned 200 OK
-      // Now mark the original Office365 message as read — only do this AFTER webhook accepted.
+      // Webhook returned 200 OK - check if we should mark as read
+      let webhookResult;
+      try {
+        webhookResult = await resp.json();
+      } catch (parseErr) {
+        console.error(`Failed to parse webhook response for job id=${job.id}:`, parseErr);
+        markJobError.run(job.id);
+        continue;
+      }
+
+      // Check if webhook says we should mark as read (price found + reply sent)
+      const shouldMarkAsRead = webhookResult?.shouldMarkAsRead === true;
+      
+      if (!shouldMarkAsRead) {
+        // Either no price was found or reply was not sent - don't mark as read so it can be retried
+        const reason = webhookResult?.replyResult?.reason || webhookResult?.replyResult?.error || 'no-price-or-reply-failed';
+        console.warn(`⚠️  Not marking as read for job id=${job.id} msg_id=${job.msg_id}. Reason: ${reason}`);
+        markJobError.run(job.id);
+        continue;
+      }
+
+      // shouldMarkAsRead is true - now mark the original Office365 message as read
       try {
         // Need a fresh Graph token to mark message as read
         const token = await getGraphAccessToken();
@@ -168,9 +188,9 @@ async function processJobs() {
         continue;
       }
 
-      // If we reach here, webhook accepted AND message marked read — safe to mark job done
+      // If we reach here, webhook accepted AND reply sent AND message marked read — safe to mark job done
       markJobDone.run(job.id);
-      console.log(`✅ Job processed and message marked read: id=${job.id} msg_id=${job.msg_id}`);
+      console.log(`✅ Job processed, reply sent, and message marked read: id=${job.id} msg_id=${job.msg_id}`);
     } catch (err) {
       // network or unexpected exception
       console.error(`Webhook exception for job id=${job.id} msg_id=${job.msg_id}:`, err);
