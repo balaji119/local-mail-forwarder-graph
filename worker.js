@@ -109,6 +109,13 @@ async function pollMailbox() {
 
     for (const msg of messages) {
       const converted = convertGraphMessage(msg);
+      
+      // Only process emails with "Test Quote" in the subject
+      const subject = converted.subject || '';
+      if (!subject.toLowerCase().includes('test quote')) {
+        logger.log(`Skipping email - subject does not contain "Test Quote": ${subject}`);
+        continue;
+      }
 
       // store msg_id and payload (dedupe by msg_id due to UNIQUE constraint)
       insertJob.run({
