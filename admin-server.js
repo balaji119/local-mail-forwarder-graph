@@ -5,6 +5,8 @@ require('dotenv').config();
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const { exec } = require('child_process');
+const logger = require('./logger');
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
@@ -19,6 +21,7 @@ const LOG_DIR = process.env.LOG_DIR || path.join(DATA_DIR, 'logs');
 const STOCK_MAPPING_FILE = path.join(DATA_DIR, 'stock-mapping.json');
 const OPERATIONS_FILE = path.join(DATA_DIR, 'operations.json');
 const PROCESS_TYPES_FILE = path.join(DATA_DIR, 'process-types.json');
+const FOLDER_CONFIG_FILE = path.join(DATA_DIR, 'folder-config.json');
 
 // Ensure directories exist
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -48,6 +51,15 @@ if (!fs.existsSync(PROCESS_TYPES_FILE)) {
     "Standard/Heavy CMYK (160sqm/hr)"
   ];
   fs.writeFileSync(PROCESS_TYPES_FILE, JSON.stringify(defaultProcessTypes, null, 2), 'utf8');
+}
+
+// Initialize folder-config.json if it doesn't exist
+if (!fs.existsSync(FOLDER_CONFIG_FILE)) {
+  const defaultFolderConfig = {
+    selectedFolderId: 'Inbox',
+    selectedFolderName: 'Inbox'
+  };
+  fs.writeFileSync(FOLDER_CONFIG_FILE, JSON.stringify(defaultFolderConfig, null, 2), 'utf8');
 }
 
 // Get stock mapping
@@ -381,6 +393,83 @@ app.delete('/api/process-types/:index', (req, res) => {
     processTypes.splice(index, 1);
     fs.writeFileSync(PROCESS_TYPES_FILE, JSON.stringify(processTypes, null, 2), 'utf8');
     res.json({ success: true, message: 'Process type deleted successfully', processTypes });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get mail folders from Microsoft Graph
+app.get('/api/folders', async (req, res) => {
+  try {
+    const { getGraphAccessToken, fetchMailFolders } = require('./ms-graph-mail');
+    const mailbox = process.env.EMAIL_FROM;
+    
+    if (!mailbox) {
+      return res.status(500).json({ error: 'EMAIL_FROM environment variable not set' });
+    }
+    
+    const token = await getGraphAccessToken();
+    const folders = await fetchMailFolders(token, mailbox);
+    
+    // Format folders for display
+    const formattedFolders = folders.map(folder => ({
+      id: folder.id,
+      name: folder.displayName || folder.name || 'Unknown',
+      unreadItemCount: folder.unreadItemCount || 0,
+      totalItemCount: folder.totalItemCount || 0
+    }));
+    
+    res.json(formattedFolders);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get selected folder configuration
+app.get('/api/folder-config', (req, res) => {
+  try {
+    if (!fs.existsSync(FOLDER_CONFIG_FILE)) {
+      return res.json({ selectedFolderId: 'Inbox', selectedFolderName: 'Inbox' });
+    }
+    const content = fs.readFileSync(FOLDER_CONFIG_FILE, 'utf8');
+    const config = JSON.parse(content);
+    res.json(config);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update selected folder configuration
+app.post('/api/folder-config', (req, res) => {
+  try {
+    const { selectedFolderId, selectedFolderName } = req.body;
+
+    if (!selectedFolderId) {
+      return res.status(400).json({ error: 'selectedFolderId is required' });
+    }
+
+    const config = {
+      selectedFolderId,
+      selectedFolderName: selectedFolderName || selectedFolderId
+    };
+
+    fs.writeFileSync(FOLDER_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
+
+    // Restart the worker service programmatically
+    //exec('docker restart local_worker', { cwd: process.cwd() }, (error, stdout, stderr) => {
+    //  if (error) {
+    //    logger.warn(`Failed to restart worker service: ${error.message}`);
+    //    // Still return success for folder update, but log the restart failure
+    //  } else {
+    //    logger.log('Worker service restarted successfully after folder selection');
+    //  }
+    //});
+
+    res.json({
+      success: true,
+      message: 'Folder configuration updated successfully. Restart the worker service manually.',
+      config
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

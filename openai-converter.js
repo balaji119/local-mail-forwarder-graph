@@ -267,7 +267,14 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
     if (mappedData) {
       final.CustomProduct.Sections[0].StockCode = mappedData.value;
       final.CustomProduct.Sections[0].ProcessFront = mappedData.processFront;
-      final.CustomProduct.Sections[0].ProcessReverse = mappedData.processReverse;
+      
+      // Check if STOCK value indicates single-sided printing
+      const printLower = extracted.print.toLowerCase();
+      const singleSidedKeywords = ['single side', '1s', '1 side', 'one side', 'ss'];
+      const isSingleSided = singleSidedKeywords.some(keyword => printLower.includes(keyword));
+      
+      // If single-sided, set ProcessReverse to None; otherwise use mapping value
+      final.CustomProduct.Sections[0].ProcessReverse = isSingleSided ? 'None' : mappedData.processReverse;
     }
   }
 

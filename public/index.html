@@ -260,6 +260,7 @@
             <button class="tab active" onclick="switchTab('mapping')">Stock Mapping</button>
             <button class="tab" onclick="switchTab('operations')">Operations</button>
             <button class="tab" onclick="switchTab('process-types')">Process Types</button>
+            <button class="tab" onclick="switchTab('folders')">Folders</button>
             <button class="tab" onclick="switchTab('logs')">Logs</button>
         </div>
         
@@ -323,7 +324,24 @@
             
             <div id="process-types-table-container"></div>
         </div>
-        
+
+        <div id="folders-tab" class="tab-content">
+            <div id="folders-alert"></div>
+
+            <div style="margin-bottom: 20px;">
+                <h3 style="margin-bottom: 10px;">Select Email Folder</h3>
+                <p style="color: #666; margin-bottom: 15px;">Choose the folder from which emails will be processed. The worker will automatically restart and begin polling this folder for unread emails.</p>
+                <div id="selected-folder-info" style="padding: 10px; background: #e8f4f8; border-radius: 4px; margin-bottom: 15px;">
+                    <strong>Currently selected:</strong> <span id="current-folder-name">Loading...</span>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" onclick="loadFolders()">Refresh Folders</button>
+            <button class="btn btn-success" onclick="loadFolderConfig()" style="margin-left: 10px;">Load Current Selection</button>
+
+            <div id="folders-table-container" style="margin-top: 20px;"></div>
+        </div>
+
         <div id="logs-tab" class="tab-content">
             <div class="log-controls">
                 <button class="btn btn-primary" onclick="loadLatestLogs()">Refresh Logs</button>
@@ -359,6 +377,9 @@
                 loadOperations();
             } else if (tabName === 'process-types') {
                 loadProcessTypes();
+            } else if (tabName === 'folders') {
+                loadFolders();
+                loadFolderConfig();
             } else if (tabName === 'logs') {
                 loadLatestLogs();
             }
@@ -920,6 +941,84 @@
                 }
             } catch (error) {
                 showAlert('process-types-alert', 'Error deleting process type: ' + error.message, 'error');
+            }
+        }
+        
+        // Folders management functions
+        async function loadFolders() {
+            try {
+                const response = await fetch('/api/folders');
+                const folders = await response.json();
+                displayFolders(folders);
+            } catch (error) {
+                showAlert('folders-alert', 'Error loading folders: ' + error.message, 'error');
+            }
+        }
+        
+        async function loadFolderConfig() {
+            try {
+                const response = await fetch('/api/folder-config');
+                const config = await response.json();
+                document.getElementById('current-folder-name').textContent = config.selectedFolderName || config.selectedFolderId || 'Inbox';
+            } catch (error) {
+                console.error('Error loading folder config:', error);
+            }
+        }
+        
+        function displayFolders(folders) {
+            const container = document.getElementById('folders-table-container');
+            
+            if (!Array.isArray(folders) || folders.length === 0) {
+                container.innerHTML = '<div class="empty-state">No folders found. Make sure EMAIL_FROM is configured correctly.</div>';
+                return;
+            }
+            
+            let html = '<table class="mapping-table"><thead><tr><th>Folder Name</th><th>Unread</th><th>Total</th><th>Actions</th></tr></thead><tbody>';
+            
+            folders.forEach(folder => {
+                html += `
+                    <tr>
+                        <td class="key-cell">${escapeHtml(folder.name)}</td>
+                        <td style="text-align: center;">${folder.unreadItemCount}</td>
+                        <td style="text-align: center;">${folder.totalItemCount}</td>
+                        <td class="actions-cell">
+                            <button class="btn btn-primary" onclick="selectFolder('${escapeHtml(folder.id).replace(/'/g, "\\'")}', '${escapeHtml(folder.name).replace(/'/g, "\\'")}')">Select</button>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+        
+        async function selectFolder(folderId, folderName) {
+            if (!confirm(`Are you sure you want to process emails from "${folderName}"?`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/folder-config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        selectedFolderId: folderId,
+                        selectedFolderName: folderName
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showAlert('folders-alert', `Folder "${folderName}" selected successfully. The worker service is being restarted automatically.`, 'success');
+                    loadFolderConfig();
+                } else {
+                    showAlert('folders-alert', 'Error: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showAlert('folders-alert', 'Error selecting folder: ' + error.message, 'error');
             }
         }
         

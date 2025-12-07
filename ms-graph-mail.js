@@ -43,9 +43,28 @@ async function getGraphAccessToken() {
   return json.access_token;
 }
 
-// Fetch unread emails from inbox
-async function fetchUnreadEmails(accessToken, mailbox) {
-  const url = `${GRAPH_BASE}/users/${encodeURIComponent(mailbox)}/mailFolders/Inbox/messages?$filter=isRead eq false&$top=10`;
+// Fetch all mail folders for a mailbox
+async function fetchMailFolders(accessToken, mailbox) {
+  const url = `${GRAPH_BASE}/users/${encodeURIComponent(mailbox)}/mailFolders`;
+
+  const resp = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+
+  if (!resp.ok) {
+    const t = await resp.text();
+    throw new Error("Graph fetchMailFolders error: " + t);
+  }
+
+  const data = await resp.json();
+  return data.value || [];
+}
+
+// Fetch unread emails from a specific folder (defaults to Inbox)
+async function fetchUnreadEmails(accessToken, mailbox, folderId = 'Inbox') {
+  // If folderId is a well-known folder name, use it directly; otherwise use the ID
+  const folderPath = folderId.includes('/') ? folderId : `mailFolders/${encodeURIComponent(folderId)}`;
+  const url = `${GRAPH_BASE}/users/${encodeURIComponent(mailbox)}/${folderPath}/messages?$filter=isRead eq false&$top=10`;
 
   const resp = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` }
@@ -130,6 +149,7 @@ function convertGraphMessage(msg) {
 
 module.exports = {
   getGraphAccessToken,
+  fetchMailFolders,
   fetchUnreadEmails,
   markMessageAsRead,
   convertGraphMessage,

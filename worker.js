@@ -94,28 +94,50 @@ function recoverStuckProcessing() {
 }
 
 // -----------------------------------------
+// Get selected folder from config
+// -----------------------------------------
+function getSelectedFolder() {
+  const folderConfigFile = path.join(DATA_DIR, 'folder-config.json');
+  try {
+    if (fs.existsSync(folderConfigFile)) {
+      const content = fs.readFileSync(folderConfigFile, 'utf8');
+      const config = JSON.parse(content);
+      const folderId = config.selectedFolderId;
+      const folderName = config.selectedFolderName || folderId;
+      if (folderId && folderId.trim() !== '') {
+        return { id: folderId, name: folderName };
+      }
+    }
+  } catch (err) {
+    logger.warn(`Failed to load folder config: ${err.message}`);
+  }
+  return null; // Return null if no folder is configured
+}
+
+// -----------------------------------------
 // Poll Office365 for emails
 // NOTE: We do NOT mark messages read here. We only insert job rows (INSERT OR IGNORE).
 // The message will remain unread until the webhook accepted the job and we mark it read later.
 // -----------------------------------------
 async function pollMailbox() {
   try {
+    const selectedFolder = getSelectedFolder();
+
+    // Check if a folder is configured
+    if (!selectedFolder) {
+      logger.log("Email processing skipped - no folder has been selected in the admin interface. Please go to the Folders tab and select a folder to process emails from.");
+      return;
+    }
+
     const token = await getGraphAccessToken();
-    const messages = await fetchUnreadEmails(token, MAILBOX);
+    const messages = await fetchUnreadEmails(token, MAILBOX, selectedFolder.id);
 
     if (messages.length > 0) {
-      logger.log(`Found ${messages.length} unread message(s)`);
+      logger.log(`Found ${messages.length} unread message(s) in folder: ${selectedFolder.name}`);
     }
 
     for (const msg of messages) {
       const converted = convertGraphMessage(msg);
-      
-      // Only process emails with "Test Quote" in the subject
-      const subject = converted.subject || '';
-      if (!subject.toLowerCase().includes('test quote')) {
-        logger.log(`Skipping email - subject does not contain "Test Quote": ${subject}`);
-        continue;
-      }
 
       // store msg_id and payload (dedupe by msg_id due to UNIQUE constraint)
       insertJob.run({
@@ -230,6 +252,11 @@ async function mainLoop() {
 
 // startup
 recoverStuckProcessing();
-console.log("Worker started. Polling Office365 mailbox:", MAILBOX);
+const selectedFolder = getSelectedFolder();
+const folderInfo = selectedFolder
+  ? `folder: ${selectedFolder.name}`
+  : 'no folder configured - please select a folder in the admin interface';
+console.log("Worker started. Polling Office365 mailbox:", MAILBOX, "-", folderInfo);
+logger.log(`Worker service restarted. Polling Office365 mailbox: ${MAILBOX} - ${folderInfo}`);
 setInterval(mainLoop, POLL_INTERVAL);
 mainLoop();

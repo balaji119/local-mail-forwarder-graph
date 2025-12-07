@@ -25,17 +25,7 @@ app.post('/webhook/email', async (req, res) => {
   try {
     const { from, subject, text, html, attachments, raw } = req.body;
     
-    // Only process emails with "Test Quote" in the subject
-    const subjectLower = (subject || '').toLowerCase();
-    if (!subjectLower.includes('test quote')) {
-      logger.log(`Rejecting email - subject does not contain "Test Quote": ${subject}`);
-      return res.json({ 
-        ok: false, 
-        reason: 'subject-filter', 
-        message: 'Email subject must contain "Test Quote" to be processed' 
-      });
-    }
-    
+    // Process all emails from the selected folder (no subject filtering)
     const emailText = `${subject || ''}\n\n${text || ''}\n\n${raw || ''}`;
 
     logger.log("Incoming email from:", from);
