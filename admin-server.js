@@ -13,7 +13,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Use DATA_DIR from env, or default to 'data' directory
 // In Docker, DATA_DIR is typically set to '/data'
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const LOG_DIR = path.join(DATA_DIR, 'logs');
+// Use LOG_DIR from env, or default to DATA_DIR/logs
+// In Docker, LOG_DIR should be set to '/usr/src/app/logs' to match logger.js
+const LOG_DIR = process.env.LOG_DIR || path.join(DATA_DIR, 'logs');
 const STOCK_MAPPING_FILE = path.join(DATA_DIR, 'stock-mapping.json');
 
 // Ensure directories exist

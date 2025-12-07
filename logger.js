@@ -5,8 +5,8 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const LOG_DIR = path.join(DATA_DIR, 'logs');
+// const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+const LOG_DIR = process.env.LOG_DIR || path.join(__dirname, 'logs');
 fs.mkdirSync(LOG_DIR, { recursive: true });
 
 // Get log file path for today

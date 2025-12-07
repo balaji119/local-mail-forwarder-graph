@@ -351,6 +351,7 @@
                         <td class="key-cell">${escapeHtml(key)}</td>
                         <td class="value-cell">${escapeHtml(value)}</td>
                         <td class="actions-cell">
+                            <button class="btn btn-primary" onclick="editMapping('${escapeHtml(key).replace(/'/g, "\\'")}', '${escapeHtml(value).replace(/'/g, "\\'")}')" style="margin-right: 5px;">Edit</button>
                             <button class="btn btn-danger" onclick="deleteMapping('${escapeHtml(key).replace(/'/g, "\\'")}')">Delete</button>
                         </td>
                     </tr>
@@ -391,6 +392,74 @@
                 }
             } catch (error) {
                 showAlert('mapping-alert', 'Error adding mapping: ' + error.message, 'error');
+            }
+        }
+        
+        function editMapping(key, value) {
+            // Populate the input fields with existing values
+            document.getElementById('new-key').value = key;
+            document.getElementById('new-value').value = value;
+            
+            // Scroll to the form
+            document.getElementById('new-key').scrollIntoView({ behavior: 'smooth', block: 'center' });
+            document.getElementById('new-key').focus();
+            
+            // Change the button text to indicate we're editing
+            const addButton = document.querySelector('button[onclick="addMapping()"]');
+            const originalText = addButton.textContent;
+            addButton.textContent = 'Update Mapping';
+            addButton.onclick = async function() {
+                await updateMapping(key);
+                addButton.textContent = originalText;
+                addButton.onclick = addMapping;
+            };
+        }
+        
+        async function updateMapping(oldKey) {
+            const newKey = document.getElementById('new-key').value.trim();
+            const newValue = document.getElementById('new-value').value.trim();
+            
+            if (!newKey || !newValue) {
+                showAlert('mapping-alert', 'Please enter both key and value', 'error');
+                return;
+            }
+            
+            try {
+                // If the key changed, we need to delete the old one and add the new one
+                if (oldKey !== newKey) {
+                    // Delete the old mapping
+                    const deleteResponse = await fetch(`/api/stock-mapping/${encodeURIComponent(oldKey)}`, {
+                        method: 'DELETE'
+                    });
+                    
+                    if (!deleteResponse.ok) {
+                        const deleteResult = await deleteResponse.json();
+                        showAlert('mapping-alert', 'Error deleting old mapping: ' + deleteResult.error, 'error');
+                        return;
+                    }
+                }
+                
+                // Add/update the new mapping
+                const response = await fetch(`/api/stock-mapping/${encodeURIComponent(newKey)}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ value: newValue })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showAlert('mapping-alert', 'Mapping updated successfully', 'success');
+                    document.getElementById('new-key').value = '';
+                    document.getElementById('new-value').value = '';
+                    loadMappings();
+                } else {
+                    showAlert('mapping-alert', 'Error: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showAlert('mapping-alert', 'Error updating mapping: ' + error.message, 'error');
             }
         }
         

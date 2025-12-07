@@ -11,6 +11,9 @@ services:
       - ./logs:/usr/src/app/logs
     env_file:
       - .env
+    environment:
+      - LOG_DIR=/usr/src/app/logs
+      - DATA_DIR=/data
 
   webhook:
     build: .
@@ -23,6 +26,9 @@ services:
       - ./logs:/usr/src/app/logs
     env_file:
       - .env
+    environment:
+      - LOG_DIR=/usr/src/app/logs
+      - DATA_DIR=/data
 
   admin:
     build: .
@@ -36,3 +42,6 @@ services:
       - ./public:/usr/src/app/public
     env_file:
       - .env
+    environment:
+      - LOG_DIR=/usr/src/app/logs
+      - DATA_DIR=/data
