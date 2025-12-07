@@ -142,6 +142,32 @@ function loadStockMapping() {
   return {};
 }
 
+// Load operations array from file
+function loadOperations() {
+  const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+  const operationsFile = path.join(DATA_DIR, 'operations.json');
+  
+  try {
+    if (fs.existsSync(operationsFile)) {
+      const content = fs.readFileSync(operationsFile, 'utf8');
+      const operations = JSON.parse(content);
+      if (Array.isArray(operations) && operations.length > 0) {
+        return operations.map(op => ({ OperationName: op }));
+      }
+    }
+  } catch (err) {
+    logger.warn(`Failed to load operations from ${operationsFile}:`, err.message);
+  }
+  
+  // Return default operations if file doesn't exist or can't be parsed
+  return [
+    { OperationName: "Preflight" },
+    { OperationName: "* PROOF PDF" },
+    { OperationName: "*FILE SETUP ADS" },
+    { OperationName: "Auto to Press" }
+  ];
+}
+
 function getStockCodeFromMapping(stockValue) {
   if (!stockValue || typeof stockValue !== 'string') {
     return null;
@@ -190,12 +216,7 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
           SideOperations: []
         }
       ],
-      JobOperations: [
-        { OperationName: "Preflight" },
-        { OperationName: "* PROOF PDF" },
-        { OperationName: "*FILE SETUP ADS" },
-        { OperationName: "Auto to Press" }
-      ]
+      JobOperations: loadOperations()
     },
     SelectedQuantity: {
       Quantity: 0,

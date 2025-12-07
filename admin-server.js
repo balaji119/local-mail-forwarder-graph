@@ -17,6 +17,7 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 // In Docker, LOG_DIR should be set to '/usr/src/app/logs' to match logger.js
 const LOG_DIR = process.env.LOG_DIR || path.join(DATA_DIR, 'logs');
 const STOCK_MAPPING_FILE = path.join(DATA_DIR, 'stock-mapping.json');
+const OPERATIONS_FILE = path.join(DATA_DIR, 'operations.json');
 
 // Ensure directories exist
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -25,6 +26,17 @@ fs.mkdirSync(LOG_DIR, { recursive: true });
 // Initialize stock-mapping.json if it doesn't exist
 if (!fs.existsSync(STOCK_MAPPING_FILE)) {
   fs.writeFileSync(STOCK_MAPPING_FILE, JSON.stringify({}, null, 2), 'utf8');
+}
+
+// Initialize operations.json if it doesn't exist (with default values)
+if (!fs.existsSync(OPERATIONS_FILE)) {
+  const defaultOperations = [
+    "Preflight",
+    "* PROOF PDF",
+    "*FILE SETUP ADS",
+    "Auto to Press"
+  ];
+  fs.writeFileSync(OPERATIONS_FILE, JSON.stringify(defaultOperations, null, 2), 'utf8');
 }
 
 // Get stock mapping
@@ -99,6 +111,128 @@ app.delete('/api/stock-mapping/:key', (req, res) => {
     delete mapping[key];
     fs.writeFileSync(STOCK_MAPPING_FILE, JSON.stringify(mapping, null, 2), 'utf8');
     res.json({ success: true, message: 'Key-value pair deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get operations array
+app.get('/api/operations', (req, res) => {
+  try {
+    if (!fs.existsSync(OPERATIONS_FILE)) {
+      return res.json([]);
+    }
+    const content = fs.readFileSync(OPERATIONS_FILE, 'utf8');
+    const operations = JSON.parse(content);
+    res.json(Array.isArray(operations) ? operations : []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Add a new operation
+app.post('/api/operations', (req, res) => {
+  try {
+    const { operation } = req.body;
+    
+    if (!operation || typeof operation !== 'string' || !operation.trim()) {
+      return res.status(400).json({ error: 'Operation name is required and must be a non-empty string' });
+    }
+    
+    if (!fs.existsSync(OPERATIONS_FILE)) {
+      fs.writeFileSync(OPERATIONS_FILE, JSON.stringify([], null, 2), 'utf8');
+    }
+    
+    const content = fs.readFileSync(OPERATIONS_FILE, 'utf8');
+    const operations = JSON.parse(content);
+    
+    if (!Array.isArray(operations)) {
+      return res.status(500).json({ error: 'Operations file is corrupted' });
+    }
+    
+    // Check for duplicates
+    if (operations.includes(operation.trim())) {
+      return res.status(400).json({ error: 'Operation already exists' });
+    }
+    
+    operations.push(operation.trim());
+    fs.writeFileSync(OPERATIONS_FILE, JSON.stringify(operations, null, 2), 'utf8');
+    res.json({ success: true, message: 'Operation added successfully', operations });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update an operation by index
+app.put('/api/operations/:index', (req, res) => {
+  try {
+    const index = parseInt(req.params.index);
+    const { operation } = req.body;
+    
+    if (isNaN(index) || index < 0) {
+      return res.status(400).json({ error: 'Invalid index' });
+    }
+    
+    if (!operation || typeof operation !== 'string' || !operation.trim()) {
+      return res.status(400).json({ error: 'Operation name is required and must be a non-empty string' });
+    }
+    
+    if (!fs.existsSync(OPERATIONS_FILE)) {
+      return res.status(404).json({ error: 'Operations file not found' });
+    }
+    
+    const content = fs.readFileSync(OPERATIONS_FILE, 'utf8');
+    const operations = JSON.parse(content);
+    
+    if (!Array.isArray(operations)) {
+      return res.status(500).json({ error: 'Operations file is corrupted' });
+    }
+    
+    if (index >= operations.length) {
+      return res.status(404).json({ error: 'Index out of range' });
+    }
+    
+    // Check for duplicates (excluding current index)
+    const trimmedOperation = operation.trim();
+    if (operations.some((op, i) => i !== index && op === trimmedOperation)) {
+      return res.status(400).json({ error: 'Operation already exists' });
+    }
+    
+    operations[index] = trimmedOperation;
+    fs.writeFileSync(OPERATIONS_FILE, JSON.stringify(operations, null, 2), 'utf8');
+    res.json({ success: true, message: 'Operation updated successfully', operations });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete an operation by index
+app.delete('/api/operations/:index', (req, res) => {
+  try {
+    const index = parseInt(req.params.index);
+    
+    if (isNaN(index) || index < 0) {
+      return res.status(400).json({ error: 'Invalid index' });
+    }
+    
+    if (!fs.existsSync(OPERATIONS_FILE)) {
+      return res.status(404).json({ error: 'Operations file not found' });
+    }
+    
+    const content = fs.readFileSync(OPERATIONS_FILE, 'utf8');
+    const operations = JSON.parse(content);
+    
+    if (!Array.isArray(operations)) {
+      return res.status(500).json({ error: 'Operations file is corrupted' });
+    }
+    
+    if (index >= operations.length) {
+      return res.status(404).json({ error: 'Index out of range' });
+    }
+    
+    operations.splice(index, 1);
+    fs.writeFileSync(OPERATIONS_FILE, JSON.stringify(operations, null, 2), 'utf8');
+    res.json({ success: true, message: 'Operation deleted successfully', operations });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
