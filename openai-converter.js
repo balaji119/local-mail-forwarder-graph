@@ -180,14 +180,31 @@ function getStockCodeFromMapping(stockValue) {
   
   // Try exact match first (case-sensitive)
   if (mapping[stockValue]) {
-    return mapping[stockValue];
+    const mappingData = mapping[stockValue];
+    // Support both old format (string) and new format (object)
+    if (typeof mappingData === 'string') {
+      return { value: mappingData, processFront: 'Standard/Heavy CMYK (160sqm/hr)', processReverse: 'Standard/Heavy CMYK (160sqm/hr)' };
+    }
+    return {
+      value: mappingData.value || mappingData,
+      processFront: mappingData.processFront || 'Standard/Heavy CMYK (160sqm/hr)',
+      processReverse: mappingData.processReverse || 'Standard/Heavy CMYK (160sqm/hr)'
+    };
   }
   
   // Try case-insensitive match
   const stockLower = stockValue.toLowerCase().trim();
   for (const [key, value] of Object.entries(mapping)) {
     if (key.toLowerCase().trim() === stockLower) {
-      return value;
+      // Support both old format (string) and new format (object)
+      if (typeof value === 'string') {
+        return { value: value, processFront: 'Standard/Heavy CMYK (160sqm/hr)', processReverse: 'Standard/Heavy CMYK (160sqm/hr)' };
+      }
+      return {
+        value: value.value || value,
+        processFront: value.processFront || 'Standard/Heavy CMYK (160sqm/hr)',
+        processReverse: value.processReverse || 'Standard/Heavy CMYK (160sqm/hr)'
+      };
     }
   }
   
@@ -206,8 +223,8 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
         {
           SectionType: "Single-Section",
           StockCode: "100gsm laser",
-          ProcessFront: "None",
-          ProcessReverse: "None",
+          ProcessFront: "Standard/Heavy CMYK (160sqm/hr)",
+          ProcessReverse: "Standard/Heavy CMYK (160sqm/hr)",
           SectionSizeWidth: 96,
           SectionSizeHeight: 48,
           FoldCatalog: "Flat Product",
@@ -244,11 +261,13 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
   final.CustomProduct.FinishSizeWidth = width;
   final.CustomProduct.FinishSizeHeight = height;
 
-  // Update StockCode based on STOCK value from email using mapping file
+  // Update StockCode and Process types based on STOCK value from email using mapping file
   if (extracted.stock) {
-    const mappedStockCode = getStockCodeFromMapping(extracted.stock);
-    if (mappedStockCode) {
-      final.CustomProduct.Sections[0].StockCode = mappedStockCode;
+    const mappedData = getStockCodeFromMapping(extracted.stock);
+    if (mappedData) {
+      final.CustomProduct.Sections[0].StockCode = mappedData.value;
+      final.CustomProduct.Sections[0].ProcessFront = mappedData.processFront;
+      final.CustomProduct.Sections[0].ProcessReverse = mappedData.processReverse;
     }
   }
 

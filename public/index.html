@@ -259,6 +259,7 @@
         <div class="tabs">
             <button class="tab active" onclick="switchTab('mapping')">Stock Mapping</button>
             <button class="tab" onclick="switchTab('operations')">Operations</button>
+            <button class="tab" onclick="switchTab('process-types')">Process Types</button>
             <button class="tab" onclick="switchTab('logs')">Logs</button>
         </div>
         
@@ -273,6 +274,20 @@
             <div class="form-group">
                 <label for="new-value">Stock Code (for PrintIQ):</label>
                 <input type="text" id="new-value" placeholder="e.g., Substrate: Yupo FPU250 UV 1320mm c3 200gsm R">
+            </div>
+            
+            <div class="form-group">
+                <label for="new-process-front">Process Front:</label>
+                <select id="new-process-front" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                    <option value="">Loading...</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="new-process-reverse">Process Reverse:</label>
+                <select id="new-process-reverse" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                    <option value="">Loading...</option>
+                </select>
             </div>
             
             <button class="btn btn-primary" onclick="addMapping()">Add Mapping</button>
@@ -293,6 +308,20 @@
             <button class="btn btn-success" onclick="loadOperations()" style="margin-left: 10px;">Refresh</button>
             
             <div id="operations-table-container"></div>
+        </div>
+        
+        <div id="process-types-tab" class="tab-content">
+            <div id="process-types-alert"></div>
+            
+            <div class="form-group">
+                <label for="new-process-type">Process Type Name:</label>
+                <input type="text" id="new-process-type" placeholder="e.g., CMYK (Toner) Single Sided">
+            </div>
+            
+            <button class="btn btn-primary" onclick="addProcessType()">Add Process Type</button>
+            <button class="btn btn-success" onclick="loadProcessTypes()" style="margin-left: 10px;">Refresh</button>
+            
+            <div id="process-types-table-container"></div>
         </div>
         
         <div id="logs-tab" class="tab-content">
@@ -325,8 +354,11 @@
             
             if (tabName === 'mapping') {
                 loadMappings();
+                loadProcessTypesForDropdowns();
             } else if (tabName === 'operations') {
                 loadOperations();
+            } else if (tabName === 'process-types') {
+                loadProcessTypes();
             } else if (tabName === 'logs') {
                 loadLatestLogs();
             }
@@ -359,16 +391,23 @@
                 return;
             }
             
-            let html = '<table class="mapping-table"><thead><tr><th>Stock Key</th><th>Stock Code</th><th>Actions</th></tr></thead><tbody>';
+            let html = '<table class="mapping-table"><thead><tr><th>Stock Key</th><th>Stock Code</th><th>Process Front</th><th>Process Reverse</th><th>Actions</th></tr></thead><tbody>';
             
             keys.forEach(key => {
-                const value = mapping[key];
+                const mappingData = mapping[key];
+                // Support both old format (string) and new format (object)
+                const value = typeof mappingData === 'string' ? mappingData : (mappingData.value || '');
+                const processFront = typeof mappingData === 'object' ? (mappingData.processFront || 'None') : 'None';
+                const processReverse = typeof mappingData === 'object' ? (mappingData.processReverse || 'None') : 'None';
+                
                 html += `
                     <tr>
                         <td class="key-cell">${escapeHtml(key)}</td>
                         <td class="value-cell">${escapeHtml(value)}</td>
+                        <td class="value-cell">${escapeHtml(processFront)}</td>
+                        <td class="value-cell">${escapeHtml(processReverse)}</td>
                         <td class="actions-cell">
-                            <button class="btn btn-primary" onclick="editMapping('${escapeHtml(key).replace(/'/g, "\\'")}', '${escapeHtml(value).replace(/'/g, "\\'")}')" style="margin-right: 5px;">Edit</button>
+                            <button class="btn btn-primary" onclick="editMapping('${escapeHtml(key).replace(/'/g, "\\'")}', '${escapeHtml(value).replace(/'/g, "\\'")}', '${escapeHtml(processFront).replace(/'/g, "\\'")}', '${escapeHtml(processReverse).replace(/'/g, "\\'")}')" style="margin-right: 5px;">Edit</button>
                             <button class="btn btn-danger" onclick="deleteMapping('${escapeHtml(key).replace(/'/g, "\\'")}')">Delete</button>
                         </td>
                     </tr>
@@ -382,6 +421,8 @@
         async function addMapping() {
             const key = document.getElementById('new-key').value.trim();
             const value = document.getElementById('new-value').value.trim();
+            const processFront = document.getElementById('new-process-front').value;
+            const processReverse = document.getElementById('new-process-reverse').value;
             
             if (!key || !value) {
                 showAlert('mapping-alert', 'Please enter both key and value', 'error');
@@ -394,7 +435,11 @@
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ value })
+                    body: JSON.stringify({ 
+                        value,
+                        processFront: processFront || 'Standard/Heavy CMYK (160sqm/hr)',
+                        processReverse: processReverse || 'Standard/Heavy CMYK (160sqm/hr)'
+                    })
                 });
                 
                 const result = await response.json();
@@ -403,6 +448,8 @@
                     showAlert('mapping-alert', 'Mapping added successfully', 'success');
                     document.getElementById('new-key').value = '';
                     document.getElementById('new-value').value = '';
+                    document.getElementById('new-process-front').value = 'Standard/Heavy CMYK (160sqm/hr)';
+                    document.getElementById('new-process-reverse').value = 'Standard/Heavy CMYK (160sqm/hr)';
                     loadMappings();
                 } else {
                     showAlert('mapping-alert', 'Error: ' + result.error, 'error');
@@ -412,10 +459,12 @@
             }
         }
         
-        function editMapping(key, value) {
+        function editMapping(key, value, processFront, processReverse) {
             // Populate the input fields with existing values
             document.getElementById('new-key').value = key;
             document.getElementById('new-value').value = value;
+            document.getElementById('new-process-front').value = processFront || 'Standard/Heavy CMYK (160sqm/hr)';
+            document.getElementById('new-process-reverse').value = processReverse || 'Standard/Heavy CMYK (160sqm/hr)';
             
             // Scroll to the form
             document.getElementById('new-key').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -435,6 +484,8 @@
         async function updateMapping(oldKey) {
             const newKey = document.getElementById('new-key').value.trim();
             const newValue = document.getElementById('new-value').value.trim();
+            const processFront = document.getElementById('new-process-front').value;
+            const processReverse = document.getElementById('new-process-reverse').value;
             
             if (!newKey || !newValue) {
                 showAlert('mapping-alert', 'Please enter both key and value', 'error');
@@ -462,7 +513,11 @@
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ value: newValue })
+                    body: JSON.stringify({ 
+                        value: newValue,
+                        processFront: processFront || 'Standard/Heavy CMYK (160sqm/hr)',
+                        processReverse: processReverse || 'Standard/Heavy CMYK (160sqm/hr)'
+                    })
                 });
                 
                 const result = await response.json();
@@ -471,6 +526,8 @@
                     showAlert('mapping-alert', 'Mapping updated successfully', 'success');
                     document.getElementById('new-key').value = '';
                     document.getElementById('new-value').value = '';
+                    document.getElementById('new-process-front').value = 'Standard/Heavy CMYK (160sqm/hr)';
+                    document.getElementById('new-process-reverse').value = 'Standard/Heavy CMYK (160sqm/hr)';
                     loadMappings();
                 } else {
                     showAlert('mapping-alert', 'Error: ' + result.error, 'error');
@@ -686,8 +743,189 @@
             }
         }
         
+        // Process Types management functions
+        async function loadProcessTypes() {
+            try {
+                const response = await fetch('/api/process-types');
+                const processTypes = await response.json();
+                displayProcessTypes(processTypes);
+            } catch (error) {
+                showAlert('process-types-alert', 'Error loading process types: ' + error.message, 'error');
+            }
+        }
+        
+        async function loadProcessTypesForDropdowns() {
+            try {
+                const response = await fetch('/api/process-types');
+                const processTypes = await response.json();
+                
+                const frontSelect = document.getElementById('new-process-front');
+                const reverseSelect = document.getElementById('new-process-reverse');
+                
+                // Clear existing options
+                frontSelect.innerHTML = '';
+                reverseSelect.innerHTML = '';
+                
+                // Add options
+                processTypes.forEach(pt => {
+                    const option = document.createElement('option');
+                    option.value = pt;
+                    option.textContent = pt;
+                    frontSelect.appendChild(option.cloneNode(true));
+                    reverseSelect.appendChild(option);
+                });
+                
+                // Set default value
+                const defaultValue = 'Standard/Heavy CMYK (160sqm/hr)';
+                if (processTypes.includes(defaultValue)) {
+                    frontSelect.value = defaultValue;
+                    reverseSelect.value = defaultValue;
+                } else if (processTypes.length > 0) {
+                    frontSelect.value = processTypes[0];
+                    reverseSelect.value = processTypes[0];
+                }
+            } catch (error) {
+                console.error('Error loading process types for dropdowns:', error);
+            }
+        }
+        
+        function displayProcessTypes(processTypes) {
+            const container = document.getElementById('process-types-table-container');
+            
+            if (!Array.isArray(processTypes) || processTypes.length === 0) {
+                container.innerHTML = '<div class="empty-state">No process types found. Add one above to get started.</div>';
+                return;
+            }
+            
+            let html = '<table class="mapping-table"><thead><tr><th>#</th><th>Process Type Name</th><th>Actions</th></tr></thead><tbody>';
+            
+            processTypes.forEach((processType, index) => {
+                html += `
+                    <tr>
+                        <td style="width: 50px;">${index + 1}</td>
+                        <td class="value-cell">${escapeHtml(processType)}</td>
+                        <td class="actions-cell">
+                            <button class="btn btn-primary" onclick="editProcessType(${index}, '${escapeHtml(processType).replace(/'/g, "\\'")}')" style="margin-right: 5px;">Edit</button>
+                            <button class="btn btn-danger" onclick="deleteProcessType(${index})">Delete</button>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+        
+        async function addProcessType() {
+            const processType = document.getElementById('new-process-type').value.trim();
+            
+            if (!processType) {
+                showAlert('process-types-alert', 'Please enter a process type name', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/process-types', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ processType })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showAlert('process-types-alert', 'Process type added successfully', 'success');
+                    document.getElementById('new-process-type').value = '';
+                    loadProcessTypes();
+                    loadProcessTypesForDropdowns(); // Refresh dropdowns in mapping tab
+                } else {
+                    showAlert('process-types-alert', 'Error: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showAlert('process-types-alert', 'Error adding process type: ' + error.message, 'error');
+            }
+        }
+        
+        function editProcessType(index, currentProcessType) {
+            // Populate the input field with existing value
+            document.getElementById('new-process-type').value = currentProcessType;
+            
+            // Scroll to the form
+            document.getElementById('new-process-type').scrollIntoView({ behavior: 'smooth', block: 'center' });
+            document.getElementById('new-process-type').focus();
+            
+            // Change the button text to indicate we're editing
+            const addButton = document.querySelector('button[onclick="addProcessType()"]');
+            const originalText = addButton.textContent;
+            addButton.textContent = 'Update Process Type';
+            addButton.onclick = async function() {
+                await updateProcessType(index);
+                addButton.textContent = originalText;
+                addButton.onclick = addProcessType;
+            };
+        }
+        
+        async function updateProcessType(index) {
+            const processType = document.getElementById('new-process-type').value.trim();
+            
+            if (!processType) {
+                showAlert('process-types-alert', 'Please enter a process type name', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/process-types/${index}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ processType })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showAlert('process-types-alert', 'Process type updated successfully', 'success');
+                    document.getElementById('new-process-type').value = '';
+                    loadProcessTypes();
+                    loadProcessTypesForDropdowns(); // Refresh dropdowns in mapping tab
+                } else {
+                    showAlert('process-types-alert', 'Error: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showAlert('process-types-alert', 'Error updating process type: ' + error.message, 'error');
+            }
+        }
+        
+        async function deleteProcessType(index) {
+            if (!confirm(`Are you sure you want to delete this process type?`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/process-types/${index}`, {
+                    method: 'DELETE'
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showAlert('process-types-alert', 'Process type deleted successfully', 'success');
+                    loadProcessTypes();
+                    loadProcessTypesForDropdowns(); // Refresh dropdowns in mapping tab
+                } else {
+                    showAlert('process-types-alert', 'Error: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showAlert('process-types-alert', 'Error deleting process type: ' + error.message, 'error');
+            }
+        }
+        
         // Load mappings on page load
         loadMappings();
+        loadProcessTypesForDropdowns();
         
         // Auto-refresh logs every 5 seconds
         setInterval(() => {
