@@ -1,0 +1,45 @@
+services:
+  worker:
+    image: balaji119/autoquote:1.0.1
+    container_name: local_worker
+    command: ["node", "worker.js"]
+    depends_on:
+      - webhook
+    volumes:
+      - ./data:/data
+      - ./logs:/usr/src/app/logs
+    env_file:
+      - .env
+    environment:
+      - LOG_DIR=/usr/src/app/logs
+      - DATA_DIR=/data
+
+  webhook:
+    image: balaji119/autoquote:1.0.1
+    container_name: local_webhook
+    command: ["node", "webhook-server.js"]
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/data
+      - ./logs:/usr/src/app/logs
+    env_file:
+      - .env
+    environment:
+      - LOG_DIR=/usr/src/app/logs
+      - DATA_DIR=/data
+
+  admin:
+    image: balaji119/autoquote:1.0.1
+    container_name: local_admin
+    command: ["node", "admin-server.js"]
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./data:/data
+      - ./logs:/usr/src/app/logs
+    env_file:
+      - .env
+    environment:
+      - LOG_DIR=/usr/src/app/logs
+      - DATA_DIR=/data

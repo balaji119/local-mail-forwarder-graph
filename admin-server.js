@@ -10,7 +10,14 @@ const logger = require('./logger');
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  index: 'index.html'
+}));
+
+// Explicit route for root path to ensure index.html is served
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 // Use DATA_DIR from env, or default to 'data' directory
 // In Docker, DATA_DIR is typically set to '/data'
@@ -558,6 +565,8 @@ app.get('/api/logs/latest/:lines?', (req, res) => {
 
 const PORT = process.env.ADMIN_PORT || 3001;
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Admin interface listening on http://0.0.0.0:${PORT}`);
+  console.log(`Static files served from: ${path.join(__dirname, 'public')}`);
+  console.log(`Index.html exists: ${fs.existsSync(path.join(__dirname, 'public', 'index.html'))}`);
 });
