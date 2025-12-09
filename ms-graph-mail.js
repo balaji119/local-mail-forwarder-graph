@@ -45,20 +45,71 @@ async function getGraphAccessToken() {
 
 // Fetch all mail folders for a mailbox
 async function fetchMailFolders(accessToken, mailbox) {
-  const url = `${GRAPH_BASE}/users/${encodeURIComponent(mailbox)}/mailFolders`;
+  const baseUrl = `${GRAPH_BASE}/users/${encodeURIComponent(mailbox)}/mailFolders?$top=999&$expand=childFolders`;
 
-  const resp = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}` }
-  });
+  const allFolders = [];
 
-  if (!resp.ok) {
-    const t = await resp.text();
-    throw new Error("Graph fetchMailFolders error: " + t);
+  async function fetchPage(url) {
+    while (url) {
+      const resp = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+
+      if (!resp.ok) {
+        const t = await resp.text();
+        throw new Error("Graph fetchMailFolders error: " + t);
+      }
+
+      const data = await resp.json();
+
+      for (const folder of data.value || []) {
+        allFolders.push(folder);
+
+        // RECURSE into child folders if they exist
+        if (folder.childFolders && folder.childFolders.length > 0) {
+          await fetchChildFolders(folder.id);
+        }
+      }
+
+      // Pagination link
+      url = data["@odata.nextLink"];
+    }
   }
 
-  const data = await resp.json();
-  return data.value || [];
+  async function fetchChildFolders(folderId) {
+    let url = `${GRAPH_BASE}/users/${encodeURIComponent(mailbox)}/mailFolders/${folderId}/childFolders?$top=999&$expand=childFolders`;
+
+    while (url) {
+      const resp = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+
+      if (!resp.ok) {
+        const t = await resp.text();
+        throw new Error("Graph fetchChildFolders error: " + t);
+      }
+
+      const data = await resp.json();
+
+      for (const child of data.value || []) {
+        allFolders.push(child);
+
+        // If this child has more children → recurse again
+        if (child.childFolders && child.childFolders.length > 0) {
+          await fetchChildFolders(child.id);
+        }
+      }
+
+      url = data["@odata.nextLink"];
+    }
+  }
+
+  // Start at root-level folders
+  await fetchPage(baseUrl);
+
+  return allFolders;
 }
+
 
 // Fetch unread emails from a specific folder (defaults to Inbox)
 async function fetchUnreadEmails(accessToken, mailbox, folderId = 'Inbox') {

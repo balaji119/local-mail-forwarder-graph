@@ -330,7 +330,7 @@
 
             <div style="margin-bottom: 20px;">
                 <h3 style="margin-bottom: 10px;">Select Email Folder</h3>
-                <p style="color: #666; margin-bottom: 15px;">Choose the folder from which emails will be processed. The worker will automatically restart and begin polling this folder for unread emails.</p>
+                <p style="color: #666; margin-bottom: 15px;">Choose the folder from which emails will be processed.</p>
                 <div id="selected-folder-info" style="padding: 10px; background: #e8f4f8; border-radius: 4px; margin-bottom: 15px;">
                     <strong>Currently selected:</strong> <span id="current-folder-name">Loading...</span>
                 </div>
@@ -1012,7 +1012,7 @@
                 const result = await response.json();
                 
                 if (response.ok) {
-                    showAlert('folders-alert', `Folder "${folderName}" selected successfully. The worker service is being restarted automatically.`, 'success');
+                    showAlert('folders-alert', `Folder "${folderName}" selected successfully. Restart the worker service manually.`, 'success');
                     loadFolderConfig();
                 } else {
                     showAlert('folders-alert', 'Error: ' + result.error, 'error');
