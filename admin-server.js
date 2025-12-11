@@ -27,7 +27,6 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const LOG_DIR = process.env.LOG_DIR || path.join(DATA_DIR, 'logs');
 const STOCK_MAPPING_FILE = path.join(DATA_DIR, 'stock-mapping.json');
 const OPERATIONS_FILE = path.join(DATA_DIR, 'operations.json');
-const PROCESS_TYPES_FILE = path.join(DATA_DIR, 'process-types.json');
 const FOLDER_CONFIG_FILE = path.join(DATA_DIR, 'folder-config.json');
 const STOCK_CODES_FILE = path.join(DATA_DIR, 'stock-codes.json');
 
@@ -51,15 +50,6 @@ if (!fs.existsSync(OPERATIONS_FILE)) {
   fs.writeFileSync(OPERATIONS_FILE, JSON.stringify(defaultOperations, null, 2), 'utf8');
 }
 
-// Initialize process-types.json if it doesn't exist (with default values)
-if (!fs.existsSync(PROCESS_TYPES_FILE)) {
-  const defaultProcessTypes = [
-    "CMYK (Toner) Single Sided",
-    "Konica Accurio C3070",
-    "Standard/Heavy CMYK (160sqm/hr)"
-  ];
-  fs.writeFileSync(PROCESS_TYPES_FILE, JSON.stringify(defaultProcessTypes, null, 2), 'utf8');
-}
 
 // Initialize folder-config.json if it doesn't exist
 if (!fs.existsSync(FOLDER_CONFIG_FILE)) {
@@ -80,6 +70,56 @@ app.get('/api/stock-mapping', (req, res) => {
     const mapping = JSON.parse(content);
     res.json(mapping);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get PrintIQ process types
+app.get('/api/printiq-process-types', async (req, res) => {
+  try {
+    const accessToken = process.env.PRINTIQ_ACCESS_TOKEN;
+    if (!accessToken) {
+      return res.status(500).json({ error: 'PRINTIQ_ACCESS_TOKEN environment variable not set' });
+    }
+
+    const baseUrl = 'https://adsaust.printiq.com/api/v1/odata/Processes';
+
+    console.log('Fetching PrintIQ process types...');
+
+    const response = await fetch(baseUrl, {
+      headers: {
+        'PrintIQ-Access-Token': accessToken,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`PrintIQ API returned status ${response.status}:`, errorText);
+      return res.status(response.status).json({ error: `PrintIQ API error: ${errorText}` });
+    }
+
+    // Check if response is actually HTML (common when auth fails or endpoint is wrong)
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('text/html')) {
+      const htmlContent = await response.text();
+      console.error('PrintIQ API returned HTML instead of JSON. This usually indicates an authentication error or incorrect endpoint.');
+      console.error('Response content (first 500 chars):', htmlContent.substring(0, 500));
+      return res.status(500).json({
+        error: 'PrintIQ API returned HTML instead of JSON. This usually indicates an authentication error or incorrect endpoint. Check your PRINTIQ_ACCESS_TOKEN.'
+      });
+    }
+
+    const data = await response.json();
+    const processes = data.value || [];
+
+    // Extract only Description field
+    const processDescriptions = processes.map(process => process.Description).filter(desc => desc && desc.trim());
+
+    console.log(`Fetched ${processDescriptions.length} process types from PrintIQ`);
+    res.json(processDescriptions);
+  } catch (err) {
+    console.error('Error fetching PrintIQ process types:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -409,127 +449,6 @@ app.delete('/api/operations/:index', (req, res) => {
   }
 });
 
-// Get process types array
-app.get('/api/process-types', (req, res) => {
-  try {
-    if (!fs.existsSync(PROCESS_TYPES_FILE)) {
-      return res.json([]);
-    }
-    const content = fs.readFileSync(PROCESS_TYPES_FILE, 'utf8');
-    const processTypes = JSON.parse(content);
-    res.json(Array.isArray(processTypes) ? processTypes : []);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Add a new process type
-app.post('/api/process-types', (req, res) => {
-  try {
-    const { processType } = req.body;
-    
-    if (!processType || typeof processType !== 'string' || !processType.trim()) {
-      return res.status(400).json({ error: 'Process type name is required and must be a non-empty string' });
-    }
-    
-    if (!fs.existsSync(PROCESS_TYPES_FILE)) {
-      fs.writeFileSync(PROCESS_TYPES_FILE, JSON.stringify([], null, 2), 'utf8');
-    }
-    
-    const content = fs.readFileSync(PROCESS_TYPES_FILE, 'utf8');
-    const processTypes = JSON.parse(content);
-    
-    if (!Array.isArray(processTypes)) {
-      return res.status(500).json({ error: 'Process types file is corrupted' });
-    }
-    
-    // Check for duplicates
-    if (processTypes.includes(processType.trim())) {
-      return res.status(400).json({ error: 'Process type already exists' });
-    }
-    
-    processTypes.push(processType.trim());
-    fs.writeFileSync(PROCESS_TYPES_FILE, JSON.stringify(processTypes, null, 2), 'utf8');
-    res.json({ success: true, message: 'Process type added successfully', processTypes });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Update a process type by index
-app.put('/api/process-types/:index', (req, res) => {
-  try {
-    const index = parseInt(req.params.index);
-    const { processType } = req.body;
-    
-    if (isNaN(index) || index < 0) {
-      return res.status(400).json({ error: 'Invalid index' });
-    }
-    
-    if (!processType || typeof processType !== 'string' || !processType.trim()) {
-      return res.status(400).json({ error: 'Process type name is required and must be a non-empty string' });
-    }
-    
-    if (!fs.existsSync(PROCESS_TYPES_FILE)) {
-      return res.status(404).json({ error: 'Process types file not found' });
-    }
-    
-    const content = fs.readFileSync(PROCESS_TYPES_FILE, 'utf8');
-    const processTypes = JSON.parse(content);
-    
-    if (!Array.isArray(processTypes)) {
-      return res.status(500).json({ error: 'Process types file is corrupted' });
-    }
-    
-    if (index >= processTypes.length) {
-      return res.status(404).json({ error: 'Index out of range' });
-    }
-    
-    // Check for duplicates (excluding current index)
-    const trimmedProcessType = processType.trim();
-    if (processTypes.some((pt, i) => i !== index && pt === trimmedProcessType)) {
-      return res.status(400).json({ error: 'Process type already exists' });
-    }
-    
-    processTypes[index] = trimmedProcessType;
-    fs.writeFileSync(PROCESS_TYPES_FILE, JSON.stringify(processTypes, null, 2), 'utf8');
-    res.json({ success: true, message: 'Process type updated successfully', processTypes });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Delete a process type by index
-app.delete('/api/process-types/:index', (req, res) => {
-  try {
-    const index = parseInt(req.params.index);
-    
-    if (isNaN(index) || index < 0) {
-      return res.status(400).json({ error: 'Invalid index' });
-    }
-    
-    if (!fs.existsSync(PROCESS_TYPES_FILE)) {
-      return res.status(404).json({ error: 'Process types file not found' });
-    }
-    
-    const content = fs.readFileSync(PROCESS_TYPES_FILE, 'utf8');
-    const processTypes = JSON.parse(content);
-    
-    if (!Array.isArray(processTypes)) {
-      return res.status(500).json({ error: 'Process types file is corrupted' });
-    }
-    
-    if (index >= processTypes.length) {
-      return res.status(404).json({ error: 'Index out of range' });
-    }
-    
-    processTypes.splice(index, 1);
-    fs.writeFileSync(PROCESS_TYPES_FILE, JSON.stringify(processTypes, null, 2), 'utf8');
-    res.json({ success: true, message: 'Process type deleted successfully', processTypes });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // Get mail folders from Microsoft Graph
 app.get('/api/folders', async (req, res) => {
