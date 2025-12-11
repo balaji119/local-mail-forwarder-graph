@@ -283,21 +283,21 @@
             <div class="form-group">
                 <label for="new-process-front">Process Front:</label>
                 <div style="position: relative;">
-                    <input type="text" id="new-process-front" placeholder="Type to search process types..." autocomplete="off" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" oninput="filterProcessDropdown('front', this.value)">
-                    <div id="process-front-dropdown" style="position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ddd; border-radius: 0 0 4px 4px; max-height: 200px; overflow-y: auto; z-index: 1000; display: none;"></div>
+                    <input type="text" id="new-process-front" placeholder="Type to search processes..." autocomplete="off" style="width: calc(100% - 120px); padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" oninput="filterProcessDropdown('front', this.value)">
+                    <button class="btn btn-success" onclick="refreshProcessTypes()" style="position: absolute; right: 0; top: 0; height: 100%; border-radius: 0 4px 4px 0; padding: 0 15px;">Refresh Processes</button>
+                    <div id="process-front-dropdown" style="position: absolute; top: 100%; left: 0; right: 120px; background: white; border: 1px solid #ddd; border-radius: 0 0 4px 4px; max-height: 200px; overflow-y: auto; z-index: 1000; display: none;"></div>
                 </div>
             </div>
 
             <div class="form-group">
                 <label for="new-process-reverse">Process Reverse:</label>
                 <div style="position: relative;">
-                    <input type="text" id="new-process-reverse" placeholder="Type to search process types..." autocomplete="off" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" oninput="filterProcessDropdown('reverse', this.value)">
+                    <input type="text" id="new-process-reverse" placeholder="Type to search processes..." autocomplete="off" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" oninput="filterProcessDropdown('reverse', this.value)">
                     <div id="process-reverse-dropdown" style="position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ddd; border-radius: 0 0 4px 4px; max-height: 200px; overflow-y: auto; z-index: 1000; display: none;"></div>
                 </div>
             </div>
             
             <button class="btn btn-primary" onclick="addMapping()">Add Mapping</button>
-            <button class="btn btn-success" onclick="loadMappings()" style="margin-left: 10px;">Refresh</button>
             
             <div id="mapping-table-container"></div>
         </div>
@@ -411,8 +411,8 @@
                 const mappingData = mapping[key];
                 // Support both old format (string) and new format (object)
                 const value = typeof mappingData === 'string' ? mappingData : (mappingData.value || '');
-                const processFront = typeof mappingData === 'object' ? (mappingData.processFront || 'None') : 'None';
-                const processReverse = typeof mappingData === 'object' ? (mappingData.processReverse || 'None') : 'None';
+                const processFront = typeof mappingData === 'object' ? (mappingData.processFront || '') : '';
+                const processReverse = typeof mappingData === 'object' ? (mappingData.processReverse || '') : '';
                 
                 html += `
                     <tr>
@@ -449,10 +449,10 @@
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ 
+                    body: JSON.stringify({
                         value,
-                        processFront: processFront || 'Standard/Heavy CMYK (160sqm/hr)',
-                        processReverse: processReverse || 'Standard/Heavy CMYK (160sqm/hr)'
+                        processFront: processFront || '',
+                        processReverse: processReverse || ''
                     })
                 });
                 
@@ -477,9 +477,9 @@
             // Populate the input fields with existing values
             document.getElementById('new-key').value = key;
             document.getElementById('new-value').value = value;
-            document.getElementById('new-process-front').value = processFront || 'Standard/Heavy CMYK (160sqm/hr)';
-            document.getElementById('new-process-reverse').value = processReverse || 'Standard/Heavy CMYK (160sqm/hr)';
-            
+            document.getElementById('new-process-front').value = processFront || '';
+            document.getElementById('new-process-reverse').value = processReverse || '';
+
             // Scroll to the form
             document.getElementById('new-key').scrollIntoView({ behavior: 'smooth', block: 'center' });
             document.getElementById('new-key').focus();
@@ -527,10 +527,10 @@
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ 
+                    body: JSON.stringify({
                         value: newValue,
-                        processFront: processFront || 'Standard/Heavy CMYK (160sqm/hr)',
-                        processReverse: processReverse || 'Standard/Heavy CMYK (160sqm/hr)'
+                        processFront: processFront || '',
+                        processReverse: processReverse || ''
                     })
                 });
                 
@@ -663,13 +663,6 @@
             try {
                 const response = await fetch('/api/printiq-process-types');
                 allProcessTypes = await response.json();
-
-                // Set default values
-                const defaultValue = 'Standard/Heavy CMYK (160sqm/hr)';
-                if (allProcessTypes.includes(defaultValue)) {
-                    processFrontInput.value = defaultValue;
-                    processReverseInput.value = defaultValue;
-                }
             } catch (error) {
                 console.error('Error loading process types:', error);
             }
@@ -751,6 +744,34 @@
                 processReverseDropdown.style.display = 'none';
             }
         });
+
+        async function refreshProcessTypes() {
+            const button = document.querySelector('button[onclick="refreshProcessTypes()"]');
+            const originalText = button.textContent;
+            button.textContent = 'Refreshing...';
+            button.disabled = true;
+
+            try {
+                const response = await fetch('/api/printiq-process-types/refresh', {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showAlert('mapping-alert', result.message, 'success');
+                    // Reload process types for dropdowns
+                    await loadProcessTypesForDropdowns();
+                } else {
+                    showAlert('mapping-alert', 'Error: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showAlert('mapping-alert', 'Error refreshing process types: ' + error.message, 'error');
+            } finally {
+                button.textContent = originalText;
+                button.disabled = false;
+            }
+        }
 
         async function refreshStockDefinitions() {
             const button = document.querySelector('button[onclick="refreshStockDefinitions()"]');

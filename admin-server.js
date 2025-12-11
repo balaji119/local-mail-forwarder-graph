@@ -29,6 +29,7 @@ const STOCK_MAPPING_FILE = path.join(DATA_DIR, 'stock-mapping.json');
 const OPERATIONS_FILE = path.join(DATA_DIR, 'operations.json');
 const FOLDER_CONFIG_FILE = path.join(DATA_DIR, 'folder-config.json');
 const STOCK_CODES_FILE = path.join(DATA_DIR, 'stock-codes.json');
+const PROCESS_TYPES_FILE = path.join(DATA_DIR, 'process-types.json');
 
 // Ensure directories exist
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -74,8 +75,23 @@ app.get('/api/stock-mapping', (req, res) => {
   }
 });
 
-// Get PrintIQ process types
-app.get('/api/printiq-process-types', async (req, res) => {
+// Get cached PrintIQ process types
+app.get('/api/printiq-process-types', (req, res) => {
+  try {
+    if (!fs.existsSync(PROCESS_TYPES_FILE)) {
+      return res.json([]);
+    }
+    const content = fs.readFileSync(PROCESS_TYPES_FILE, 'utf8');
+    const processTypes = JSON.parse(content);
+    res.json(Array.isArray(processTypes) ? processTypes : []);
+  } catch (err) {
+    console.error('Error reading cached process types:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Refresh PrintIQ process types from API
+app.post('/api/printiq-process-types/refresh', async (req, res) => {
   try {
     const accessToken = process.env.PRINTIQ_ACCESS_TOKEN;
     if (!accessToken) {
@@ -116,10 +132,17 @@ app.get('/api/printiq-process-types', async (req, res) => {
     // Extract only Description field
     const processDescriptions = processes.map(process => process.Description).filter(desc => desc && desc.trim());
 
-    console.log(`Fetched ${processDescriptions.length} process types from PrintIQ`);
-    res.json(processDescriptions);
+    // Save to cache file
+    fs.writeFileSync(PROCESS_TYPES_FILE, JSON.stringify(processDescriptions, null, 2), 'utf8');
+
+    console.log(`Fetched and cached ${processDescriptions.length} process types from PrintIQ`);
+    res.json({
+      success: true,
+      count: processDescriptions.length,
+      message: `Successfully refreshed ${processDescriptions.length} process types`
+    });
   } catch (err) {
-    console.error('Error fetching PrintIQ process types:', err);
+    console.error('Error refreshing PrintIQ process types:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -608,7 +631,7 @@ app.get('/api/logs/latest/:lines?', (req, res) => {
   }
 });
 
-const PORT = process.env.ADMIN_PORT || 3001;
+const PORT = process.env.ADMIN_PORT || 3002;
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Admin interface listening on http://0.0.0.0:${PORT}`);
