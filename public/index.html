@@ -274,7 +274,11 @@
             
             <div class="form-group">
                 <label for="new-value">Stock Code (for PrintIQ):</label>
-                <input type="text" id="new-value" placeholder="e.g., Substrate: Yupo FPU250 UV 1320mm c3 200gsm R">
+                <div style="position: relative;">
+                    <input type="text" id="new-value" placeholder="Type to search stock codes..." autocomplete="off" style="width: calc(100% - 120px); padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" oninput="filterStockDropdown(this.value)">
+                    <div id="stock-dropdown" style="position: absolute; top: 100%; left: 0; right: 120px; background: white; border: 1px solid #ddd; border-radius: 0 0 4px 4px; max-height: 200px; overflow-y: auto; z-index: 1000; display: none;"></div>
+                    <button class="btn btn-success" onclick="refreshStockDefinitions()" style="position: absolute; right: 0; top: 0; height: 100%; border-radius: 0 4px 4px 0; padding: 0 15px;">Refresh Stock</button>
+                </div>
             </div>
             
             <div class="form-group">
@@ -398,6 +402,9 @@
                 const response = await fetch('/api/stock-mapping');
                 const mapping = await response.json();
                 displayMappings(mapping);
+
+                // Load process types for dropdowns
+                await loadProcessTypesForDropdowns();
             } catch (error) {
                 showAlert('mapping-alert', 'Error loading mappings: ' + error.message, 'error');
             }
@@ -562,14 +569,14 @@
             if (!confirm(`Are you sure you want to delete the mapping for "${key}"?`)) {
                 return;
             }
-            
+
             try {
                 const response = await fetch(`/api/stock-mapping/${encodeURIComponent(key)}`, {
                     method: 'DELETE'
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (response.ok) {
                     showAlert('mapping-alert', 'Mapping deleted successfully', 'success');
                     loadMappings();
@@ -578,6 +585,110 @@
                 }
             } catch (error) {
                 showAlert('mapping-alert', 'Error deleting mapping: ' + error.message, 'error');
+            }
+        }
+
+        // Stock dropdown functionality
+        let allStockDefinitions = [];
+        const stockInput = document.getElementById('new-value');
+        const stockDropdown = document.getElementById('stock-dropdown');
+
+        async function loadAllStockDefinitions() {
+            try {
+                const response = await fetch('/api/printiq-stock-definitions');
+                allStockDefinitions = await response.json();
+                // Don't populate initially, wait for user input
+            } catch (error) {
+                console.error('Error loading stock definitions:', error);
+            }
+        }
+
+        function showStockDropdown(stocks) {
+            if (stocks.length === 0) {
+                stockDropdown.innerHTML = '<div style="padding: 10px; color: #666;">No stock definitions available</div>';
+                stockDropdown.style.display = 'block';
+                return;
+            }
+
+            let html = '';
+            stocks.forEach(stock => {
+                html += `
+                    <div class="stock-option" data-code="${escapeHtml(stock.code)}" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee;" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='white'" onclick="selectStock('${escapeHtml(stock.code).replace(/'/g, "\\'")}')">
+                        <div style="font-weight: bold;">${escapeHtml(stock.code)}</div>
+                        <div style="font-size: 12px; color: #666;">${escapeHtml(stock.description)}</div>
+                    </div>
+                `;
+            });
+
+            stockDropdown.innerHTML = html;
+            stockDropdown.style.display = 'block';
+        }
+
+        function filterStockDropdown(query) {
+            if (!query) {
+                // Show first 20 items when no query
+                showStockDropdown(allStockDefinitions.slice(0, 20));
+                return;
+            }
+
+            const filteredStocks = allStockDefinitions.filter(stock =>
+                stock.code.toLowerCase().includes(query.toLowerCase()) ||
+                stock.description.toLowerCase().includes(query.toLowerCase())
+            ).slice(0, 20); // Limit to 20 results
+
+            if (filteredStocks.length === 0) {
+                stockDropdown.innerHTML = '<div style="padding: 10px; color: #666;">No matches found</div>';
+                stockDropdown.style.display = 'block';
+                return;
+            }
+
+            showStockDropdown(filteredStocks);
+        }
+
+        function selectStock(code) {
+            stockInput.value = code;
+            stockDropdown.style.display = 'none';
+        }
+
+        // Show dropdown on focus/click
+        stockInput.addEventListener('focus', function() {
+            filterStockDropdown(this.value);
+        });
+
+        stockInput.addEventListener('click', function() {
+            filterStockDropdown(this.value);
+        });
+
+        // Hide dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!stockInput.contains(e.target) && !stockDropdown.contains(e.target)) {
+                stockDropdown.style.display = 'none';
+            }
+        });
+
+        async function refreshStockDefinitions() {
+            const button = document.querySelector('button[onclick="refreshStockDefinitions()"]');
+            const originalText = button.textContent;
+            button.textContent = 'Refreshing...';
+            button.disabled = true;
+
+            try {
+                const response = await fetch('/api/printiq-stock-definitions/refresh', {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showAlert('mapping-alert', result.message, 'success');
+                } else {
+                    showAlert('mapping-alert', 'Error: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showAlert('mapping-alert', 'Error refreshing stock definitions: ' + error.message, 'error');
+            } finally {
+                button.textContent = originalText;
+                button.disabled = false;
             }
         }
         
@@ -1025,6 +1136,7 @@
         // Load mappings on page load
         loadMappings();
         loadProcessTypesForDropdowns();
+        loadAllStockDefinitions();
         
         // Auto-refresh logs every 5 seconds
         setInterval(() => {

@@ -29,6 +29,7 @@ const STOCK_MAPPING_FILE = path.join(DATA_DIR, 'stock-mapping.json');
 const OPERATIONS_FILE = path.join(DATA_DIR, 'operations.json');
 const PROCESS_TYPES_FILE = path.join(DATA_DIR, 'process-types.json');
 const FOLDER_CONFIG_FILE = path.join(DATA_DIR, 'folder-config.json');
+const STOCK_CODES_FILE = path.join(DATA_DIR, 'stock-codes.json');
 
 // Ensure directories exist
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -79,6 +80,131 @@ app.get('/api/stock-mapping', (req, res) => {
     const mapping = JSON.parse(content);
     res.json(mapping);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Refresh stock definitions from PrintIQ API
+app.post('/api/printiq-stock-definitions/refresh', async (req, res) => {
+  try {
+    const accessToken = process.env.PRINTIQ_ACCESS_TOKEN;
+    if (!accessToken) {
+      return res.status(500).json({ error: 'PRINTIQ_ACCESS_TOKEN environment variable not set' });
+    }
+
+    const baseUrl = 'https://adsaust.printiq.com/api/v1/odata/StockDefinitions';
+    let allStockDefinitions = [];
+    let skip = 0;
+    const pageSize = 50;
+
+    console.log('Starting refresh of PrintIQ stock definitions...');
+
+    while (true) {
+      const url = `${baseUrl}?$skip=${skip}`;
+      console.log(`Fetching PrintIQ stock definitions, skip=${skip}, url=${url}`);
+
+      const response = await fetch(url, {
+        headers: {
+          'PrintIQ-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`PrintIQ API returned status ${response.status}:`, errorText);
+        return res.status(response.status).json({ error: `PrintIQ API error: ${errorText}` });
+      }
+
+      // Check if response is actually HTML (common when auth fails or endpoint is wrong)
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('text/html')) {
+        const htmlContent = await response.text();
+        console.error('PrintIQ API returned HTML instead of JSON. This usually indicates an authentication error or incorrect endpoint.');
+        console.error('Response content (first 500 chars):', htmlContent.substring(0, 500));
+        return res.status(500).json({
+          error: 'PrintIQ API returned HTML instead of JSON. This usually indicates an authentication error or incorrect endpoint. Check your PRINTIQ_ACCESS_TOKEN.'
+        });
+      }
+
+      const data = await response.json();
+      const stocks = data.value || [];
+
+      console.log(`API returned ${stocks.length} raw stock items`);
+
+      // Extract only Code and Description
+      const processedStocks = stocks.map(stock => ({
+        code: stock.Code,
+        description: stock.Description
+      }));
+
+      allStockDefinitions = allStockDefinitions.concat(processedStocks);
+
+      console.log(`Processed ${processedStocks.length} stock definitions, total so far: ${allStockDefinitions.length}`);
+      console.log(`Sample processed stock:`, processedStocks[0]);
+
+      // Check if there are more pages
+      if (data['@odata.nextLink']) {
+        skip += pageSize;
+      } else {
+        break;
+      }
+    }
+
+    // Save to file
+    fs.writeFileSync(STOCK_CODES_FILE, JSON.stringify(allStockDefinitions, null, 2), 'utf8');
+
+    console.log(`Fetched and saved ${allStockDefinitions.length} stock definitions from PrintIQ`);
+    res.json({
+      success: true,
+      count: allStockDefinitions.length,
+      message: `Successfully refreshed ${allStockDefinitions.length} stock definitions`
+    });
+  } catch (err) {
+    console.error('Error refreshing PrintIQ stock definitions:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get cached stock definitions for search
+app.get('/api/printiq-stock-definitions', (req, res) => {
+  try {
+    if (!fs.existsSync(STOCK_CODES_FILE)) {
+      return res.json([]);
+    }
+    const content = fs.readFileSync(STOCK_CODES_FILE, 'utf8');
+    const stockDefinitions = JSON.parse(content);
+    res.json(stockDefinitions);
+  } catch (err) {
+    console.error('Error reading stock definitions:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Search cached stock definitions by description
+app.get('/api/printiq-stock-definitions/search', (req, res) => {
+  try {
+    const searchTerm = req.query.q?.toLowerCase() || '';
+    if (!searchTerm || searchTerm.length < 2) {
+      return res.json([]);
+    }
+
+    if (!fs.existsSync(STOCK_CODES_FILE)) {
+      return res.json([]);
+    }
+
+    const content = fs.readFileSync(STOCK_CODES_FILE, 'utf8');
+    const allStockDefinitions = JSON.parse(content);
+
+    // Filter by search term in description
+    const filteredResults = allStockDefinitions
+      .filter(stock => stock.description.toLowerCase().includes(searchTerm))
+      .slice(0, 20); // Limit to 20 results for performance
+
+    console.log(`Search "${searchTerm}" returned ${filteredResults.length} results`);
+    res.json(filteredResults);
+  } catch (err) {
+    console.error('Error searching stock definitions:', err);
     res.status(500).json({ error: err.message });
   }
 });
