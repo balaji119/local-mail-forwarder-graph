@@ -113,13 +113,23 @@ function extractKindsArrayFromExtracted(extracted) {
     .filter(Boolean);
 }
 
-function buildJobTitleFromExtracted(ex) {
-  // Build job title from available pieces similarly to earlier rules
-  // Prefer: title - rfq_no - prod
-  const parts = [];  
-  if (ex.rfq_no) parts.push(ex.rfq_no);
+function buildJobTitleFromExtracted(ex, rawText) {
+  // Extract content after # from email subject (first line)
+  const lines = rawText.split('\n').map(line => line.trim());
+  const subjectLine = lines[0] || '';
+  let subjectContent = '';
+
+  const hashIndex = subjectLine.indexOf('#');
+  if (hashIndex !== -1) {
+    subjectContent = subjectLine.substring(hashIndex + 1).trim();
+  }
+
+  // Combine subject content with title from body
+  const parts = [];
+  if (subjectContent) parts.push(subjectContent);
   if (ex.title) parts.push(ex.title);
-  return parts.length ? parts.join(" - ") : null;
+
+  return parts.length ? parts.join(' - ') : null;
 }
 
 // Load stock mapping from external JSON file
@@ -278,7 +288,7 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
   }
 
   // Titles/notes
-  final.JobTitle = buildJobTitleFromExtracted(extracted);
+  final.JobTitle = buildJobTitleFromExtracted(extracted, rawText);
   final.JobDescription = extracted.title || null;
   final.Notes = extracted.title || null;
 
