@@ -116,10 +116,9 @@ function extractKindsArrayFromExtracted(extracted) {
 function buildJobTitleFromExtracted(ex) {
   // Build job title from available pieces similarly to earlier rules
   // Prefer: title - rfq_no - prod
-  const parts = [];
-  if (ex.title) parts.push(ex.title);
+  const parts = [];  
   if (ex.rfq_no) parts.push(ex.rfq_no);
-  if (ex.prod) parts.push(ex.prod);
+  if (ex.title) parts.push(ex.title);
   return parts.length ? parts.join(" - ") : null;
 }
 
@@ -403,7 +402,7 @@ async function convertWithOpenAI(rawText) {
   final.CustomerCode = "C00116";
   final.Deliveries = [];
 
-  return final;
+  return { final, extracted };
 }
 
 /**
@@ -414,30 +413,34 @@ async function convertWithOpenAI(rawText) {
  */
 async function processEmailWithOpenAI(emailText, options = {}) {
   const { enableLogging = false } = options;
-  
+
   try {
     if (enableLogging) {
       logger.log("Processing email text (first 200 chars):", (emailText || "").substring(0, 200));
     }
-    
-    const payload = await convertWithOpenAI(emailText);
-    
+
+    const result = await convertWithOpenAI(emailText);
+    const { final: payload, extracted } = result;
+
     if (enableLogging) {
+      logger.log("Extracted data:", JSON.stringify(extracted, null, 2));
       logger.log("Payload (final JSON):", JSON.stringify(payload, null, 2));
     }
-    
+
     return {
       success: true,
       payload,
+      extracted,
       timestamp: Date.now()
     };
-    
+
   } catch (error) {
     logger.error("OpenAI conversion error:", error);
     return {
       success: false,
       error: String(error),
       payload: null,
+      extracted: null,
       timestamp: Date.now()
     };
   }
