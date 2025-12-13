@@ -320,7 +320,19 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
   // Titles/notes
   final.JobTitle = buildJobTitleFromExtracted(extracted, rawText);
   final.JobDescription = extracted.title || null;
-  final.Notes = extracted.title || null;
+
+  // Build notes with finished size, substrate, and mode
+  const notesParts = [];
+  if (width !== null && height !== null) {
+    notesParts.push(`Finished Size: ${width} x ${height}`);
+  }
+  if (extracted.stock) {
+    notesParts.push(`Substrate: ${extracted.stock}`);
+  }
+  if (final.CustomProduct.Sections[0].ProcessFront) {
+    notesParts.push(`Mode: ${final.CustomProduct.Sections[0].ProcessFront}`);
+  }
+  final.Notes = notesParts.length > 0 ? notesParts.join('\n') : null;
 
 
   // Customer reference fallback to rfq_no
