@@ -155,7 +155,7 @@ function loadStockMapping() {
 function loadOperations() {
   const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
   const operationsFile = path.join(DATA_DIR, 'operations.json');
-  
+
   try {
     if (fs.existsSync(operationsFile)) {
       const content = fs.readFileSync(operationsFile, 'utf8');
@@ -167,7 +167,7 @@ function loadOperations() {
   } catch (err) {
     logger.warn(`Failed to load operations from ${operationsFile}:`, err.message);
   }
-  
+
   // Return default operations if file doesn't exist or can't be parsed
   return [
     { OperationName: "Preflight" },
@@ -175,6 +175,33 @@ function loadOperations() {
     { OperationName: "*FILE SETUP ADS" },
     { OperationName: "Auto to Press" }
   ];
+}
+
+// Load default settings from file
+function loadDefaultSettings() {
+  const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+  const settingsFile = path.join(DATA_DIR, 'default-settings.json');
+
+  try {
+    if (fs.existsSync(settingsFile)) {
+      const content = fs.readFileSync(settingsFile, 'utf8');
+      const settings = JSON.parse(content);
+      return {
+        defaultStockCode: settings.defaultStockCode || "100gsm laser",
+        defaultProcessFront: settings.defaultProcessFront || "Standard/Heavy CMYK (160sqm/hr)",
+        defaultProcessReverse: settings.defaultProcessReverse || "Standard/Heavy CMYK (160sqm/hr)"
+      };
+    }
+  } catch (err) {
+    logger.warn(`Failed to load default settings from ${settingsFile}:`, err.message);
+  }
+
+  // Return default settings if file doesn't exist or can't be parsed
+  return {
+    defaultStockCode: "100gsm laser",
+    defaultProcessFront: "Standard/Heavy CMYK (160sqm/hr)",
+    defaultProcessReverse: "Standard/Heavy CMYK (160sqm/hr)"
+  };
 }
 
 function getStockCodeFromMapping(stockValue) {
@@ -222,7 +249,10 @@ function getStockCodeFromMapping(stockValue) {
 
 // Build "final" JSON shape from the compact extracted model output
 function buildFinalJsonFromExtracted(extracted, rawText) {
-  // Ensure default structure and hard-coded fields as requested
+  // Load default settings
+  const defaultSettings = loadDefaultSettings();
+
+  // Ensure default structure and configurable default fields
   const final = {
     CustomProduct: {
       ProductCategory: null,
@@ -231,9 +261,9 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
       Sections: [
         {
           SectionType: "Single-Section",
-          StockCode: "100gsm laser",
-          ProcessFront: "Standard/Heavy CMYK (160sqm/hr)",
-          ProcessReverse: "Standard/Heavy CMYK (160sqm/hr)",
+          StockCode: defaultSettings.defaultStockCode,
+          ProcessFront: defaultSettings.defaultProcessFront,
+          ProcessReverse: defaultSettings.defaultProcessReverse,
           SectionSizeWidth: 96,
           SectionSizeHeight: 48,
           FoldCatalog: "Flat Product",
@@ -387,7 +417,7 @@ async function callOpenAIForExtractor(rawText) {
 // This function now:
 // 1) calls the model to get a small extractor JSON
 // 2) parses that JSON
-// 3) transforms to the final required JSON shape (with your hard-coded defaults)
+// 3) transforms to the final required JSON shape (with configurable defaults)
 async function convertWithOpenAI(rawText) {
   // 1) ask model for compact extractor JSON
   const modelText = await callOpenAIForExtractor(rawText);

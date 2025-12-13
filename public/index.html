@@ -260,6 +260,7 @@
             <button class="tab active" onclick="switchTab('mapping')">Stock Mapping</button>
             <button class="tab" onclick="switchTab('operations')">Operations</button>
             <button class="tab" onclick="switchTab('folders')">Folders</button>
+            <button class="tab" onclick="switchTab('settings')">Settings</button>
             <button class="tab" onclick="switchTab('logs')">Logs</button>
         </div>
         
@@ -334,6 +335,44 @@
             <div id="folders-table-container" style="margin-top: 20px;"></div>
         </div>
 
+        <div id="settings-tab" class="tab-content">
+            <div id="settings-alert"></div>
+
+            <div style="margin-bottom: 20px;">
+                <h3 style="margin-bottom: 10px;">Default Settings</h3>
+                <p style="color: #666; margin-bottom: 15px;">Configure default stock and process values used when no specific mapping is found in emails.</p>
+            </div>
+
+            <div class="form-group">
+                <label for="default-stock-code">Default Stock Code:</label>
+                <div style="position: relative;">
+                    <input type="text" id="default-stock-code" placeholder="Select default stock code..." autocomplete="off" style="width: calc(100% - 120px); padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" oninput="filterDefaultStockDropdown(this.value)">
+                    <div id="default-stock-dropdown" style="position: absolute; top: 100%; left: 0; right: 120px; background: white; border: 1px solid #ddd; border-radius: 0 0 4px 4px; max-height: 200px; overflow-y: auto; z-index: 1000; display: none;"></div>
+                    <button class="btn btn-success" onclick="refreshDefaultStockDefinitions()" style="position: absolute; right: 0; top: 0; height: 100%; border-radius: 0 4px 4px 0; padding: 0 15px;">Refresh Stock</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="default-process-front">Default Process Front:</label>
+                <div style="position: relative;">
+                    <input type="text" id="default-process-front" placeholder="Select default front process..." autocomplete="off" style="width: calc(100% - 120px); padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" oninput="filterDefaultProcessDropdown('front', this.value)">
+                    <button class="btn btn-success" onclick="refreshDefaultProcessTypes()" style="position: absolute; right: 0; top: 0; height: 100%; border-radius: 0 4px 4px 0; padding: 0 15px;">Refresh Processes</button>
+                    <div id="default-process-front-dropdown" style="position: absolute; top: 100%; left: 0; right: 120px; background: white; border: 1px solid #ddd; border-radius: 0 0 4px 4px; max-height: 200px; overflow-y: auto; z-index: 1000; display: none;"></div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="default-process-reverse">Default Process Reverse:</label>
+                <div style="position: relative;">
+                    <input type="text" id="default-process-reverse" placeholder="Select default reverse process..." autocomplete="off" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" oninput="filterDefaultProcessDropdown('reverse', this.value)">
+                    <div id="default-process-reverse-dropdown" style="position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ddd; border-radius: 0 0 4px 4px; max-height: 200px; overflow-y: auto; z-index: 1000; display: none;"></div>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+            <button class="btn btn-success" onclick="loadSettings()" style="margin-left: 10px;">Load Current Settings</button>
+        </div>
+
         <div id="logs-tab" class="tab-content">
             <div class="log-controls">
                 <button class="btn btn-primary" onclick="loadLatestLogs()">Refresh Logs</button>
@@ -370,6 +409,10 @@
             } else if (tabName === 'folders') {
                 loadFolders();
                 loadFolderConfig();
+            } else if (tabName === 'settings') {
+                loadSettings();
+                loadDefaultStockDefinitions();
+                loadDefaultProcessTypesForDropdowns();
             } else if (tabName === 'logs') {
                 loadLatestLogs();
             }
@@ -1059,11 +1102,280 @@
             }
         }
         
+        // Settings management functions
+        async function loadSettings() {
+            try {
+                const response = await fetch('/api/settings');
+                const settings = await response.json();
+                document.getElementById('default-stock-code').value = settings.defaultStockCode || '';
+                document.getElementById('default-process-front').value = settings.defaultProcessFront || '';
+                document.getElementById('default-process-reverse').value = settings.defaultProcessReverse || '';
+            } catch (error) {
+                showAlert('settings-alert', 'Error loading settings: ' + error.message, 'error');
+            }
+        }
+
+        async function saveSettings() {
+            const defaultStockCode = document.getElementById('default-stock-code').value.trim();
+            const defaultProcessFront = document.getElementById('default-process-front').value.trim();
+            const defaultProcessReverse = document.getElementById('default-process-reverse').value.trim();
+
+            if (!defaultStockCode || !defaultProcessFront || !defaultProcessReverse) {
+                showAlert('settings-alert', 'Please fill in all default settings', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        defaultStockCode,
+                        defaultProcessFront,
+                        defaultProcessReverse
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showAlert('settings-alert', 'Settings saved successfully', 'success');
+                } else {
+                    showAlert('settings-alert', 'Error: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showAlert('settings-alert', 'Error saving settings: ' + error.message, 'error');
+            }
+        }
+
+        // Default stock dropdown functionality
+        let defaultAllStockDefinitions = [];
+        const defaultStockInput = document.getElementById('default-stock-code');
+        const defaultStockDropdown = document.getElementById('default-stock-dropdown');
+
+        async function loadDefaultStockDefinitions() {
+            try {
+                const response = await fetch('/api/printiq-stock-definitions');
+                defaultAllStockDefinitions = await response.json();
+            } catch (error) {
+                console.error('Error loading default stock definitions:', error);
+            }
+        }
+
+        function showDefaultStockDropdown(stocks) {
+            if (stocks.length === 0) {
+                defaultStockDropdown.innerHTML = '<div style="padding: 10px; color: #666;">No stock definitions available</div>';
+                defaultStockDropdown.style.display = 'block';
+                return;
+            }
+
+            let html = '';
+            stocks.forEach(stock => {
+                html += `
+                    <div class="stock-option" data-code="${escapeHtml(stock.code)}" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee;" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='white'" onclick="selectDefaultStock('${escapeHtml(stock.code).replace(/'/g, "\\'")}')">
+                        <div style="font-weight: bold;">${escapeHtml(stock.code)}</div>
+                        <div style="font-size: 12px; color: #666;">${escapeHtml(stock.description)}</div>
+                    </div>
+                `;
+            });
+
+            defaultStockDropdown.innerHTML = html;
+            defaultStockDropdown.style.display = 'block';
+        }
+
+        function filterDefaultStockDropdown(query) {
+            if (!query) {
+                showDefaultStockDropdown(defaultAllStockDefinitions.slice(0, 20));
+                return;
+            }
+
+            const filteredStocks = defaultAllStockDefinitions.filter(stock =>
+                stock.code.toLowerCase().includes(query.toLowerCase()) ||
+                stock.description.toLowerCase().includes(query.toLowerCase())
+            ).slice(0, 20);
+
+            if (filteredStocks.length === 0) {
+                defaultStockDropdown.innerHTML = '<div style="padding: 10px; color: #666;">No matches found</div>';
+                defaultStockDropdown.style.display = 'block';
+                return;
+            }
+
+            showDefaultStockDropdown(filteredStocks);
+        }
+
+        function selectDefaultStock(code) {
+            defaultStockInput.value = code;
+            defaultStockDropdown.style.display = 'none';
+        }
+
+        // Show dropdown on focus/click for default stock
+        defaultStockInput.addEventListener('focus', function() {
+            filterDefaultStockDropdown(this.value);
+        });
+
+        defaultStockInput.addEventListener('click', function() {
+            filterDefaultStockDropdown(this.value);
+        });
+
+        // Hide dropdown when clicking outside for default stock
+        document.addEventListener('click', function(e) {
+            if (!defaultStockInput.contains(e.target) && !defaultStockDropdown.contains(e.target)) {
+                defaultStockDropdown.style.display = 'none';
+            }
+        });
+
+        // Default process types dropdown functionality
+        let defaultAllProcessTypes = [];
+        const defaultProcessFrontInput = document.getElementById('default-process-front');
+        const defaultProcessFrontDropdown = document.getElementById('default-process-front-dropdown');
+        const defaultProcessReverseInput = document.getElementById('default-process-reverse');
+        const defaultProcessReverseDropdown = document.getElementById('default-process-reverse-dropdown');
+
+        async function loadDefaultProcessTypesForDropdowns() {
+            try {
+                const response = await fetch('/api/printiq-process-types');
+                defaultAllProcessTypes = await response.json();
+            } catch (error) {
+                console.error('Error loading default process types:', error);
+            }
+        }
+
+        function filterDefaultProcessDropdown(type, query) {
+            const input = type === 'front' ? defaultProcessFrontInput : defaultProcessReverseInput;
+            const dropdown = type === 'front' ? defaultProcessFrontDropdown : defaultProcessReverseDropdown;
+
+            if (!query) {
+                showDefaultProcessDropdown(dropdown, defaultAllProcessTypes.slice(0, 20));
+                return;
+            }
+
+            const filteredTypes = defaultAllProcessTypes.filter(pt =>
+                pt.toLowerCase().includes(query.toLowerCase())
+            ).slice(0, 20);
+
+            if (filteredTypes.length === 0) {
+                dropdown.innerHTML = '<div style="padding: 10px; color: #666;">No matches found</div>';
+                dropdown.style.display = 'block';
+                return;
+            }
+
+            showDefaultProcessDropdown(dropdown, filteredTypes);
+        }
+
+        function showDefaultProcessDropdown(dropdown, processTypes) {
+            if (processTypes.length === 0) {
+                dropdown.innerHTML = '<div style="padding: 10px; color: #666;">No process types available</div>';
+                dropdown.style.display = 'block';
+                return;
+            }
+
+            let html = '';
+            processTypes.forEach(pt => {
+                html += `
+                    <div class="process-option" data-value="${escapeHtml(pt)}" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee;" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='white'" onclick="selectDefaultProcessType('${escapeHtml(pt).replace(/'/g, "\\'")}', this)">
+                        ${escapeHtml(pt)}
+                    </div>
+                `;
+            });
+
+            dropdown.innerHTML = html;
+            dropdown.style.display = 'block';
+        }
+
+        function selectDefaultProcessType(value, element) {
+            const dropdown = element.closest('[id$="-dropdown"]');
+            const input = dropdown.id === 'default-process-front-dropdown' ? defaultProcessFrontInput : defaultProcessReverseInput;
+
+            input.value = value;
+            dropdown.style.display = 'none';
+        }
+
+        // Show dropdown on focus/click for default process inputs
+        defaultProcessFrontInput.addEventListener('focus', function() {
+            filterDefaultProcessDropdown('front', this.value);
+        });
+        defaultProcessFrontInput.addEventListener('click', function() {
+            filterDefaultProcessDropdown('front', this.value);
+        });
+
+        defaultProcessReverseInput.addEventListener('focus', function() {
+            filterDefaultProcessDropdown('reverse', this.value);
+        });
+        defaultProcessReverseInput.addEventListener('click', function() {
+            filterDefaultProcessDropdown('reverse', this.value);
+        });
+
+        // Hide dropdowns when clicking outside for default process
+        document.addEventListener('click', function(e) {
+            if (!defaultProcessFrontInput.contains(e.target) && !defaultProcessFrontDropdown.contains(e.target)) {
+                defaultProcessFrontDropdown.style.display = 'none';
+            }
+            if (!defaultProcessReverseInput.contains(e.target) && !defaultProcessReverseDropdown.contains(e.target)) {
+                defaultProcessReverseDropdown.style.display = 'none';
+            }
+        });
+
+        async function refreshDefaultStockDefinitions() {
+            const button = document.querySelector('button[onclick="refreshDefaultStockDefinitions()"]');
+            const originalText = button.textContent;
+            button.textContent = 'Refreshing...';
+            button.disabled = true;
+
+            try {
+                const response = await fetch('/api/printiq-stock-definitions/refresh', {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showAlert('settings-alert', result.message, 'success');
+                    await loadDefaultStockDefinitions();
+                } else {
+                    showAlert('settings-alert', 'Error: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showAlert('settings-alert', 'Error refreshing stock definitions: ' + error.message, 'error');
+            } finally {
+                button.textContent = originalText;
+                button.disabled = false;
+            }
+        }
+
+        async function refreshDefaultProcessTypes() {
+            const button = document.querySelector('button[onclick="refreshDefaultProcessTypes()"]');
+            const originalText = button.textContent;
+            button.textContent = 'Refreshing...';
+            button.disabled = true;
+
+            try {
+                const response = await fetch('/api/printiq-process-types/refresh', {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showAlert('settings-alert', result.message, 'success');
+                    await loadDefaultProcessTypesForDropdowns();
+                } else {
+                    showAlert('settings-alert', 'Error: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showAlert('settings-alert', 'Error refreshing process types: ' + error.message, 'error');
+            } finally {
+                button.textContent = originalText;
+                button.disabled = false;
+            }
+        }
+
         // Load mappings on page load
         loadMappings();
         loadProcessTypesForDropdowns();
         loadAllStockDefinitions();
-        
+
         // Auto-refresh logs every 5 seconds
         setInterval(() => {
             if (document.getElementById('logs-tab').classList.contains('active')) {

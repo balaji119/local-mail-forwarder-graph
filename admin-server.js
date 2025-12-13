@@ -30,6 +30,7 @@ const OPERATIONS_FILE = path.join(DATA_DIR, 'operations.json');
 const FOLDER_CONFIG_FILE = path.join(DATA_DIR, 'folder-config.json');
 const STOCK_CODES_FILE = path.join(DATA_DIR, 'stock-codes.json');
 const PROCESS_TYPES_FILE = path.join(DATA_DIR, 'process-types.json');
+const SETTINGS_FILE = path.join(DATA_DIR, 'default-settings.json');
 
 // Ensure directories exist
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -59,6 +60,16 @@ if (!fs.existsSync(FOLDER_CONFIG_FILE)) {
     selectedFolderName: 'Inbox'
   };
   fs.writeFileSync(FOLDER_CONFIG_FILE, JSON.stringify(defaultFolderConfig, null, 2), 'utf8');
+}
+
+// Initialize default-settings.json if it doesn't exist
+if (!fs.existsSync(SETTINGS_FILE)) {
+  const defaultSettings = {
+    defaultStockCode: "100gsm laser",
+    defaultProcessFront: "Standard/Heavy CMYK (160sqm/hr)",
+    defaultProcessReverse: "Standard/Heavy CMYK (160sqm/hr)"
+  };
+  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(defaultSettings, null, 2), 'utf8');
 }
 
 // Get stock mapping
@@ -550,6 +561,51 @@ app.post('/api/folder-config', (req, res) => {
   }
 });
 
+// Get default settings
+app.get('/api/settings', (req, res) => {
+  try {
+    if (!fs.existsSync(SETTINGS_FILE)) {
+      return res.json({
+        defaultStockCode: "100gsm laser",
+        defaultProcessFront: "Standard/Heavy CMYK (160sqm/hr)",
+        defaultProcessReverse: "Standard/Heavy CMYK (160sqm/hr)"
+      });
+    }
+    const content = fs.readFileSync(SETTINGS_FILE, 'utf8');
+    const settings = JSON.parse(content);
+    res.json(settings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update default settings
+app.post('/api/settings', (req, res) => {
+  try {
+    const { defaultStockCode, defaultProcessFront, defaultProcessReverse } = req.body;
+
+    if (!defaultStockCode || !defaultProcessFront || !defaultProcessReverse) {
+      return res.status(400).json({ error: 'defaultStockCode, defaultProcessFront, and defaultProcessReverse are required' });
+    }
+
+    const settings = {
+      defaultStockCode,
+      defaultProcessFront,
+      defaultProcessReverse
+    };
+
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf8');
+
+    res.json({
+      success: true,
+      message: 'Settings updated successfully',
+      settings
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Get list of log files
 app.get('/api/logs/files', (req, res) => {
   try {
@@ -631,7 +687,7 @@ app.get('/api/logs/latest/:lines?', (req, res) => {
   }
 });
 
-const PORT = process.env.ADMIN_PORT || 3002;
+const PORT = process.env.ADMIN_PORT || 3001;
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Admin interface listening on http://0.0.0.0:${PORT}`);
