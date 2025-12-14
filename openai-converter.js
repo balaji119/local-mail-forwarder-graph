@@ -177,6 +177,29 @@ function loadOperations() {
   ];
 }
 
+// Load section operations array from file
+function loadSectionOperations() {
+  const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+  const sectionOperationsFile = path.join(DATA_DIR, 'section-operations.json');
+
+  try {
+    if (fs.existsSync(sectionOperationsFile)) {
+      const content = fs.readFileSync(sectionOperationsFile, 'utf8');
+      const sectionOperations = JSON.parse(content);
+      if (Array.isArray(sectionOperations) && sectionOperations.length > 0) {
+        return sectionOperations.map(op => ({ OperationName: op }));
+      }
+    }
+  } catch (err) {
+    logger.warn(`Failed to load section operations from ${sectionOperationsFile}:`, err.message);
+  }
+
+  // Return default section operations if file doesn't exist or can't be parsed
+  return [
+    { OperationName: "Square Cut" }
+  ];
+}
+
 // Load default settings from file
 function loadDefaultSettings() {
   const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
@@ -268,7 +291,7 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
           SectionSizeHeight: 48,
           FoldCatalog: "Flat Product",
           Pages: 2,
-          SectionOperations: [],
+          SectionOperations: loadSectionOperations(),
           SideOperations: []
         }
       ],

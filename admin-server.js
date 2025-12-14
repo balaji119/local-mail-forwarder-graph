@@ -27,6 +27,7 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const LOG_DIR = process.env.LOG_DIR || path.join(DATA_DIR, 'logs');
 const STOCK_MAPPING_FILE = path.join(DATA_DIR, 'stock-mapping.json');
 const OPERATIONS_FILE = path.join(DATA_DIR, 'operations.json');
+const SECTION_OPERATIONS_FILE = path.join(DATA_DIR, 'section-operations.json');
 const FOLDER_CONFIG_FILE = path.join(DATA_DIR, 'folder-config.json');
 const STOCK_CODES_FILE = path.join(DATA_DIR, 'stock-codes.json');
 const PROCESS_TYPES_FILE = path.join(DATA_DIR, 'process-types.json');
@@ -52,6 +53,13 @@ if (!fs.existsSync(OPERATIONS_FILE)) {
   fs.writeFileSync(OPERATIONS_FILE, JSON.stringify(defaultOperations, null, 2), 'utf8');
 }
 
+// Initialize section-operations.json if it doesn't exist (with default values)
+if (!fs.existsSync(SECTION_OPERATIONS_FILE)) {
+  const defaultSectionOperations = [
+    "Square Cut"
+  ];
+  fs.writeFileSync(SECTION_OPERATIONS_FILE, JSON.stringify(defaultSectionOperations, null, 2), 'utf8');
+}
 
 // Initialize folder-config.json if it doesn't exist
 if (!fs.existsSync(FOLDER_CONFIG_FILE)) {
@@ -483,6 +491,127 @@ app.delete('/api/operations/:index', (req, res) => {
   }
 });
 
+// Get section operations array
+app.get('/api/section-operations', (req, res) => {
+  try {
+    if (!fs.existsSync(SECTION_OPERATIONS_FILE)) {
+      return res.json([]);
+    }
+    const content = fs.readFileSync(SECTION_OPERATIONS_FILE, 'utf8');
+    const sectionOperations = JSON.parse(content);
+    res.json(Array.isArray(sectionOperations) ? sectionOperations : []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Add a new section operation
+app.post('/api/section-operations', (req, res) => {
+  try {
+    const { operation } = req.body;
+
+    if (!operation || typeof operation !== 'string' || !operation.trim()) {
+      return res.status(400).json({ error: 'Operation name is required and must be a non-empty string' });
+    }
+
+    if (!fs.existsSync(SECTION_OPERATIONS_FILE)) {
+      fs.writeFileSync(SECTION_OPERATIONS_FILE, JSON.stringify([], null, 2), 'utf8');
+    }
+
+    const content = fs.readFileSync(SECTION_OPERATIONS_FILE, 'utf8');
+    const sectionOperations = JSON.parse(content);
+
+    if (!Array.isArray(sectionOperations)) {
+      return res.status(500).json({ error: 'Section operations file is corrupted' });
+    }
+
+    // Check for duplicates
+    if (sectionOperations.includes(operation.trim())) {
+      return res.status(400).json({ error: 'Operation already exists' });
+    }
+
+    sectionOperations.push(operation.trim());
+    fs.writeFileSync(SECTION_OPERATIONS_FILE, JSON.stringify(sectionOperations, null, 2), 'utf8');
+    res.json({ success: true, message: 'Section operation added successfully', sectionOperations });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update a section operation by index
+app.put('/api/section-operations/:index', (req, res) => {
+  try {
+    const index = parseInt(req.params.index);
+    const { operation } = req.body;
+
+    if (isNaN(index) || index < 0) {
+      return res.status(400).json({ error: 'Invalid index' });
+    }
+
+    if (!operation || typeof operation !== 'string' || !operation.trim()) {
+      return res.status(400).json({ error: 'Operation name is required and must be a non-empty string' });
+    }
+
+    if (!fs.existsSync(SECTION_OPERATIONS_FILE)) {
+      return res.status(404).json({ error: 'Section operations file not found' });
+    }
+
+    const content = fs.readFileSync(SECTION_OPERATIONS_FILE, 'utf8');
+    const sectionOperations = JSON.parse(content);
+
+    if (!Array.isArray(sectionOperations)) {
+      return res.status(500).json({ error: 'Section operations file is corrupted' });
+    }
+
+    if (index >= sectionOperations.length) {
+      return res.status(404).json({ error: 'Index out of range' });
+    }
+
+    // Check for duplicates (excluding current index)
+    const trimmedOperation = operation.trim();
+    if (sectionOperations.some((op, i) => i !== index && op === trimmedOperation)) {
+      return res.status(400).json({ error: 'Operation already exists' });
+    }
+
+    sectionOperations[index] = trimmedOperation;
+    fs.writeFileSync(SECTION_OPERATIONS_FILE, JSON.stringify(sectionOperations, null, 2), 'utf8');
+    res.json({ success: true, message: 'Section operation updated successfully', sectionOperations });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete a section operation by index
+app.delete('/api/section-operations/:index', (req, res) => {
+  try {
+    const index = parseInt(req.params.index);
+
+    if (isNaN(index) || index < 0) {
+      return res.status(400).json({ error: 'Invalid index' });
+    }
+
+    if (!fs.existsSync(SECTION_OPERATIONS_FILE)) {
+      return res.status(404).json({ error: 'Section operations file not found' });
+    }
+
+    const content = fs.readFileSync(SECTION_OPERATIONS_FILE, 'utf8');
+    const sectionOperations = JSON.parse(content);
+
+    if (!Array.isArray(sectionOperations)) {
+      return res.status(500).json({ error: 'Section operations file is corrupted' });
+    }
+
+    if (index >= sectionOperations.length) {
+      return res.status(404).json({ error: 'Index out of range' });
+    }
+
+    sectionOperations.splice(index, 1);
+    fs.writeFileSync(SECTION_OPERATIONS_FILE, JSON.stringify(sectionOperations, null, 2), 'utf8');
+    res.json({ success: true, message: 'Section operation deleted successfully', sectionOperations });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Get mail folders from Microsoft Graph
 app.get('/api/folders', async (req, res) => {
