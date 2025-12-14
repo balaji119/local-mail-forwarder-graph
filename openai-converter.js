@@ -304,7 +304,7 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
     QuoteContact: {},
     Deliveries: [], // ALWAYS empty
     TargetFreightPrice: "10.00",
-    CustomerCode: "C00116",
+    CustomerCode: "C00014",
     AcceptQuote: false,
     JobDescription: null,
     JobTitle: null,
@@ -329,6 +329,8 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
     if (mappedData) {
       final.CustomProduct.Sections[0].StockCode = mappedData.value;
       final.CustomProduct.Sections[0].ProcessFront = mappedData.processFront;
+      final.CustomProduct.Sections[0].SectionSizeWidth = width;
+      final.CustomProduct.Sections[0].SectionSizeHeight = height;
       
       // Check if STOCK value indicates single-sided printing
       const printLower = extracted.print.toLowerCase();
