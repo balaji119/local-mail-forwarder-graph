@@ -38,7 +38,7 @@ const samplePayload = {
   "QuoteContact": {},
   "Deliveries": [],
   "TargetFreightPrice": null,
-  "CustomerCode": "C00116",
+  "CustomerCode": "C00014",
   "AcceptQuote": false,
   "JobDescription": "Test quote for business cards",
   "JobTitle": "RFQ001 - Business Cards",

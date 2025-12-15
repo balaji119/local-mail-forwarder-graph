@@ -34,8 +34,10 @@ app.post('/webhook/email', async (req, res) => {
     const result = await convertWithOpenAI(emailText);
     const payload = result.final;
     const extracted = result.extracted;
+    const stockMappingUsed = result.stockMappingUsed;
     logger.log("Payload:", JSON.stringify(payload, null, 2));
     logger.log("Extracted:", JSON.stringify(extracted, null, 2));
+    logger.log("Stock mapping used:", stockMappingUsed);
 
     // Process the quote using the extracted module
     const quoteResult = await processQuote(payload, { logDir: LOG_DIR });
@@ -58,6 +60,7 @@ app.post('/webhook/email', async (req, res) => {
       // Use the extracted information from OpenAI parsing
 
       const replySubject = `ADS-ColesDraftQuotes ${extracted.title || 'Quote'} — ${quoteNo}`;
+      const stockMappingNote = !stockMappingUsed ? `<p><strong style="color: red;">Default stock is used as the mapping is not available.</strong></p>` : '';
       const replyHtml = `<p>Quote Created: <strong>${quoteNo}</strong>.</p>
 <p><strong>Estimated unit price:</strong> ${priceStr} (ex GST)<br/><strong>Quantity:</strong> ${qtyText}</p>
 <p><strong>Information received from client:</strong></p>
@@ -67,7 +70,8 @@ app.post('/webhook/email', async (req, res) => {
 <li><strong>STOCK:</strong> ${extracted.stock || 'Not specified'}</li>
 <li><strong>FINISH:</strong> ${extracted.finish || 'Not specified'}</li>
 <li><strong>PACKING:</strong> ${extracted.packing || 'Not specified'}</li>
-</ul>`;
+</ul>
+${stockMappingNote}`;
 
       try {
         replyResult = await sendMailOffice365({ to: replyTo, subject: replySubject, htmlBody: replyHtml });

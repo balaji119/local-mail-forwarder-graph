@@ -314,6 +314,9 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
     CustomerReference: null
   };
 
+  // Track if stock mapping was used
+  let stockMappingUsed = false;
+
   // Normalize extracted fields and types
   const width = safeNumFromString(extracted.width) ?? null;
   const height = safeNumFromString(extracted.height) ?? null;
@@ -331,14 +334,15 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
       final.CustomProduct.Sections[0].ProcessFront = mappedData.processFront;
       final.CustomProduct.Sections[0].SectionSizeWidth = width;
       final.CustomProduct.Sections[0].SectionSizeHeight = height;
-      
+
       // Check if STOCK value indicates single-sided printing
       const printLower = extracted.print.toLowerCase();
       const singleSidedKeywords = ['single side', '1s', '1 side', 'one side', ' ss '];
       const isSingleSided = singleSidedKeywords.some(keyword => printLower.includes(keyword));
-      
+
       // If single-sided, set ProcessReverse to None; otherwise use mapping value
       final.CustomProduct.Sections[0].ProcessReverse = isSingleSided ? 'None' : mappedData.processReverse;
+      stockMappingUsed = true;
     }
   }
 
@@ -398,7 +402,7 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
   if (final.SelectedQuantity.Quantity != null) final.SelectedQuantity.Quantity = Number(final.SelectedQuantity.Quantity);
   if (final.SelectedQuantity.Kinds != null) final.SelectedQuantity.Kinds = Number(final.SelectedQuantity.Kinds);
 
-  return final;
+  return { final, stockMappingUsed };
 }
 
 // ---------- OpenAI call ----------
@@ -473,13 +477,15 @@ async function convertWithOpenAI(rawText) {
   if (!extracted.kinds) extracted.kinds = [];
 
   // 3) deterministic JS post-processing -> build final JSON
-  const final = buildFinalJsonFromExtracted(extracted, rawText);
+  const result = buildFinalJsonFromExtracted(extracted, rawText);
+  const final = result.final;
+  const stockMappingUsed = result.stockMappingUsed;
 
   // Enforce the always-required hard-coded fields (again) to be safe
   final.CustomerCode = "C00014";
   final.Deliveries = [];
 
-  return { final, extracted };
+  return { final, extracted, stockMappingUsed };
 }
 
 /**
@@ -497,17 +503,19 @@ async function processEmailWithOpenAI(emailText, options = {}) {
     }
 
     const result = await convertWithOpenAI(emailText);
-    const { final: payload, extracted } = result;
+    const { final: payload, extracted, stockMappingUsed } = result;
 
     if (enableLogging) {
       logger.log("Extracted data:", JSON.stringify(extracted, null, 2));
       logger.log("Payload (final JSON):", JSON.stringify(payload, null, 2));
+      logger.log("Stock mapping used:", stockMappingUsed);
     }
 
     return {
       success: true,
       payload,
       extracted,
+      stockMappingUsed,
       timestamp: Date.now()
     };
 
@@ -518,6 +526,7 @@ async function processEmailWithOpenAI(emailText, options = {}) {
       error: String(error),
       payload: null,
       extracted: null,
+      stockMappingUsed: false,
       timestamp: Date.now()
     };
   }

@@ -161,7 +161,7 @@ async function testHardCodedValues() {
     const result = await convertWithOpenAI(sampleEmails.minimal);
     
     // Test hard-coded values
-    console.log('CustomerCode check:', result.CustomerCode === "C00116" ? '✓' : '✗');
+    console.log('CustomerCode check:', result.CustomerCode === "C00014" ? '✓' : '✗');
     console.log('Deliveries empty check:', Array.isArray(result.Deliveries) && result.Deliveries.length === 0 ? '✓' : '✗');
     console.log('Sections check:', result.CustomProduct?.Sections?.length === 1 ? '✓' : '✗');
     console.log('JobOperations check:', result.CustomProduct?.JobOperations?.length === 1 ? '✓' : '✗');
