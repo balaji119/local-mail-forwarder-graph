@@ -138,7 +138,7 @@ async function processQuote(payload, options = {}) {
   const { logDir = LOG_DIR } = options;
   
   // Ensure payload has required fields
-  payload.CustomerCode = payload.CustomerCode || "C00116";
+  payload.CustomerCode = payload.CustomerCode || "C00014";
 
   const stamp = Date.now();
   

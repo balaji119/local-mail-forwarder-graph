@@ -334,7 +334,7 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
       
       // Check if STOCK value indicates single-sided printing
       const printLower = extracted.print.toLowerCase();
-      const singleSidedKeywords = ['single side', '1s', '1 side', 'one side', 'ss'];
+      const singleSidedKeywords = ['single side', '1s', '1 side', 'one side', ' ss '];
       const isSingleSided = singleSidedKeywords.some(keyword => printLower.includes(keyword));
       
       // If single-sided, set ProcessReverse to None; otherwise use mapping value
@@ -476,7 +476,7 @@ async function convertWithOpenAI(rawText) {
   const final = buildFinalJsonFromExtracted(extracted, rawText);
 
   // Enforce the always-required hard-coded fields (again) to be safe
-  final.CustomerCode = "C00116";
+  final.CustomerCode = "C00014";
   final.Deliveries = [];
 
   return { final, extracted };
