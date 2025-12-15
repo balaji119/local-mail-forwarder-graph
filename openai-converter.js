@@ -348,7 +348,6 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
 
   // Titles/notes
   final.JobTitle = buildJobTitleFromExtracted(extracted, rawText);
-  final.JobDescription = extracted.title || null;
 
   // Build notes with finished size, substrate, and mode
   const descParts = [];
@@ -361,6 +360,7 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
   if (final.CustomProduct.Sections[0].ProcessFront) {
     descParts.push(`Mode: ${final.CustomProduct.Sections[0].ProcessFront}`);
   }
+  descParts.push('Includes: Bulk packed and Wrapped')
   final.JobDescription = descParts.length > 0 ? descParts.join('\n') : null;
 
 
