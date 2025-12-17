@@ -122,14 +122,18 @@ function buildJobTitleFromExtracted(ex, rawText) {
   const hashIndex = subjectLine.indexOf('#');
   if (hashIndex !== -1) {
     subjectContent = subjectLine.substring(hashIndex + 1).trim();
+    // Remove "(ADS)" from the end if it exists
+    if (subjectContent.endsWith('(ADS)')) {
+      subjectContent = subjectContent.slice(0, -5).trim();
+    }
   }
 
-  // Combine subject content with title from body
+  // Combine subject content with prod from body
   const parts = [];
   if (subjectContent) parts.push(subjectContent);
-  if (ex.title) parts.push(ex.title);
+  if (ex.prod) parts.push(ex.prod);
 
-  return parts.length ? parts.join(' - ') : null;
+  return parts.length ? parts.join(' / ') : null;
 }
 
 // Load stock mapping from external JSON file
@@ -287,8 +291,8 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
           StockCode: defaultSettings.defaultStockCode,
           ProcessFront: defaultSettings.defaultProcessFront,
           ProcessReverse: defaultSettings.defaultProcessReverse,
-          SectionSizeWidth: 96,
-          SectionSizeHeight: 48,
+          SectionSizeWidth: 0,
+          SectionSizeHeight: 0,
           FoldCatalog: "Flat Product",
           Pages: 2,
           SectionOperations: loadSectionOperations(),
@@ -325,6 +329,8 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
 
   final.CustomProduct.FinishSizeWidth = width;
   final.CustomProduct.FinishSizeHeight = height;
+  final.CustomProduct.Sections[0].SectionSizeWidth = width;
+  final.CustomProduct.Sections[0].SectionSizeHeight = height;
 
   // Update StockCode and Process types based on STOCK value from email using mapping file
   if (extracted.stock) {
@@ -332,8 +338,7 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
     if (mappedData) {
       final.CustomProduct.Sections[0].StockCode = mappedData.value;
       final.CustomProduct.Sections[0].ProcessFront = mappedData.processFront;
-      final.CustomProduct.Sections[0].SectionSizeWidth = width;
-      final.CustomProduct.Sections[0].SectionSizeHeight = height;
+      
 
       // Check if STOCK value indicates single-sided printing
       const printLower = extracted.print.toLowerCase();

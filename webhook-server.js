@@ -59,7 +59,7 @@ app.post('/webhook/email', async (req, res) => {
 
       // Use the extracted information from OpenAI parsing
 
-      const replySubject = `ADS-ColesDraftQuotes ${extracted.title || 'Quote'} — ${quoteNo}`;
+      const replySubject = payload.JobTitle || `ADS-ColesDraftQuotes ${extracted.title || 'Quote'} — ${quoteNo}`;
       const stockMappingNote = !stockMappingUsed ? `<p><strong style="color: red;">Default stock is used as the mapping is not available.</strong></p>` : '';
       const replyHtml = `<p>Quote Created: <strong>${quoteNo}</strong>.</p>
 <p><strong>Estimated unit price:</strong> ${priceStr} (ex GST)<br/><strong>Quantity:</strong> ${qtyText}</p>
