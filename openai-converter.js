@@ -204,6 +204,16 @@ function loadSectionOperations() {
   ];
 }
 
+// Load quote contact from environment variables
+function loadQuoteContact() {
+  return {
+    Title: process.env.QUOTE_CONTACT_TITLE,
+    FirstName: process.env.QUOTE_CONTACT_FIRST_NAME,
+    Surname: process.env.QUOTE_CONTACT_SURNAME,
+    Email: process.env.QUOTE_CONTACT_EMAIL,
+  };
+}
+
 // Load default settings from file
 function loadDefaultSettings() {
   const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
@@ -305,12 +315,7 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
       Quantity: 0,
       Kinds: 0
     },
-    QuoteContact: {
-      Title: "Accounts Payable",
-      FirstName: "Accounts",
-      Surname: "Payable",
-      Email: "accounts@lithocraft.com.au",
-    },
+    QuoteContact: loadQuoteContact(),
     Deliveries: [], // ALWAYS empty
     TargetFreightPrice: "10.00",
     CustomerCode: "C00014",
