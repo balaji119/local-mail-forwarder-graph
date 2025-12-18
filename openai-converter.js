@@ -305,7 +305,12 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
       Quantity: 0,
       Kinds: 0
     },
-    QuoteContact: {},
+    QuoteContact: {
+      Title: "Accounts Payable",
+      FirstName: "Accounts",
+      Surname: "Payable",
+      Email: "accounts@lithocraft.com.au",
+    },
     Deliveries: [], // ALWAYS empty
     TargetFreightPrice: "10.00",
     CustomerCode: "C00014",
