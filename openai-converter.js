@@ -332,18 +332,25 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
   final.CustomProduct.Sections[0].SectionSizeWidth = width;
   final.CustomProduct.Sections[0].SectionSizeHeight = height;
 
+  // Check if PRINT value indicates single-sided printing (always check, regardless of stock mapping)
+  let isSingleSided = false;
+  if (extracted.print) {
+    const printLower = extracted.print.toLowerCase();
+    const singleSidedKeywords = ['single side', '1s', '1 side', 'one side', ' ss '];
+    isSingleSided = singleSidedKeywords.some(keyword => printLower.includes(keyword));
+
+    // If single-sided printing detected, set ProcessReverse to None
+    if (isSingleSided) {
+      final.CustomProduct.Sections[0].ProcessReverse = 'None';
+    }
+  }
+
   // Update StockCode and Process types based on STOCK value from email using mapping file
   if (extracted.stock) {
     const mappedData = getStockCodeFromMapping(extracted.stock);
     if (mappedData) {
       final.CustomProduct.Sections[0].StockCode = mappedData.value;
       final.CustomProduct.Sections[0].ProcessFront = mappedData.processFront;
-      
-
-      // Check if STOCK value indicates single-sided printing
-      const printLower = extracted.print.toLowerCase();
-      const singleSidedKeywords = ['single side', '1s', '1 side', 'one side', ' ss '];
-      const isSingleSided = singleSidedKeywords.some(keyword => printLower.includes(keyword));
 
       // If single-sided, set ProcessReverse to None; otherwise use mapping value
       final.CustomProduct.Sections[0].ProcessReverse = isSingleSided ? 'None' : mappedData.processReverse;
