@@ -521,7 +521,7 @@ app.get('/api/section-operations', (req, res) => {
 // Add a new section operation
 app.post('/api/section-operations', (req, res) => {
   try {
-    const { operationName, group } = req.body;
+    const { operationName, group, rule } = req.body;
 
     if (!operationName || typeof operationName !== 'string' || !operationName.trim()) {
       return res.status(400).json({ error: 'Operation name is required and must be a non-empty string' });
@@ -560,6 +560,9 @@ app.post('/api/section-operations', (req, res) => {
     if (group && typeof group === 'string' && group.trim()) {
       newOperation.Group = group.trim();
     }
+    if (rule && typeof rule === 'string' && rule.trim()) {
+      newOperation.Rule = rule.trim();
+    }
 
     sectionOperations.push(newOperation);
     fs.writeFileSync(SECTION_OPERATIONS_FILE, JSON.stringify(sectionOperations, null, 2), 'utf8');
@@ -573,7 +576,7 @@ app.post('/api/section-operations', (req, res) => {
 app.put('/api/section-operations/:index', (req, res) => {
   try {
     const index = parseInt(req.params.index);
-    const { operationName, group } = req.body;
+    const { operationName, group, rule } = req.body;
 
     if (isNaN(index) || index < 0) {
       return res.status(400).json({ error: 'Invalid index' });
@@ -620,6 +623,9 @@ app.put('/api/section-operations/:index', (req, res) => {
     const updatedOperation = { OperationName: trimmedOperationName };
     if (group && typeof group === 'string' && group.trim()) {
       updatedOperation.Group = group.trim();
+    }
+    if (rule && typeof rule === 'string' && rule.trim()) {
+      updatedOperation.Rule = rule.trim();
     }
 
     sectionOperations[index] = updatedOperation;

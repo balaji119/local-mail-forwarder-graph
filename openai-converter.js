@@ -182,7 +182,8 @@ function loadOperations() {
 }
 
 // Load section operations array from file
-function loadSectionOperations() {
+// If extractedPrint is provided, filter operations based on Rule field
+function loadSectionOperations(extractedPrint) {
   const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
   const sectionOperationsFile = path.join(DATA_DIR, 'section-operations.json');
 
@@ -191,7 +192,27 @@ function loadSectionOperations() {
       const content = fs.readFileSync(sectionOperationsFile, 'utf8');
       const sectionOperations = JSON.parse(content);
       if (Array.isArray(sectionOperations) && sectionOperations.length > 0) {
-        return sectionOperations.map(op => {
+        // Filter operations based on Rule if extractedPrint is provided
+        const printLower = extractedPrint ? extractedPrint.toLowerCase() : '';
+        
+        const filteredOperations = sectionOperations.filter(op => {
+          // Handle old format (string) - always include
+          if (typeof op === 'string') {
+            return true;
+          }
+          
+          // If Rule is not specified or empty, include the operation (current behavior)
+          if (!op.Rule || typeof op.Rule !== 'string' || !op.Rule.trim()) {
+            return true;
+          }
+          
+          // If Rule is specified, check if it's present in extracted.print
+          const ruleLower = op.Rule.trim().toLowerCase();
+          return printLower.includes(ruleLower);
+        });
+        
+        // Map to output format
+        return filteredOperations.map(op => {
           // Handle old format (string) - backward compatibility
           if (typeof op === 'string') {
             return { OperationName: op };
@@ -317,7 +338,7 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
           SectionSizeHeight: 0,
           FoldCatalog: "Flat Product",
           Pages: 2,
-          SectionOperations: loadSectionOperations(),
+          SectionOperations: loadSectionOperations(extracted.print),
           SideOperations: []
         }
       ],

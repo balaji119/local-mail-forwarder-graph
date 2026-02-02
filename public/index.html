@@ -363,6 +363,11 @@
                 <input type="text" id="new-section-group" placeholder="e.g., Die cut to shape">
             </div>
 
+            <div class="form-group">
+                <label for="new-section-rule">Rule (optional):</label>
+                <input type="text" id="new-section-rule" placeholder="e.g., die cut (only include if this text appears in PRINT field)">
+            </div>
+
             <button class="btn btn-primary" onclick="addSectionOperation()">Add Section Operation</button>
             <button class="btn btn-success" onclick="loadSectionOperations()" style="margin-left: 10px;">Refresh</button>
 
@@ -1267,20 +1272,22 @@
                 return;
             }
 
-            let html = '<table class="mapping-table"><thead><tr><th>#</th><th>Operation Name</th><th>Group</th><th>Actions</th></tr></thead><tbody>';
+            let html = '<table class="mapping-table"><thead><tr><th>#</th><th>Operation Name</th><th>Group</th><th>Rule</th><th>Actions</th></tr></thead><tbody>';
 
             sectionOperations.forEach((operation, index) => {
                 // Handle both old format (string) and new format (object)
                 const operationName = typeof operation === 'string' ? operation : (operation.OperationName || '');
                 const group = typeof operation === 'object' ? (operation.Group || '') : '';
+                const rule = typeof operation === 'object' ? (operation.Rule || '') : '';
                 
                 html += `
                     <tr>
                         <td style="width: 50px;">${index + 1}</td>
                         <td class="value-cell">${escapeHtml(operationName)}</td>
                         <td class="value-cell">${escapeHtml(group)}</td>
+                        <td class="value-cell">${escapeHtml(rule)}</td>
                         <td class="actions-cell">
-                            <button class="btn btn-primary" onclick="editSectionOperation(${index}, '${escapeHtml(operationName).replace(/'/g, "\\'")}', '${escapeHtml(group).replace(/'/g, "\\'")}')" style="margin-right: 5px;">Edit</button>
+                            <button class="btn btn-primary" onclick="editSectionOperation(${index}, '${escapeHtml(operationName).replace(/'/g, "\\'")}', '${escapeHtml(group).replace(/'/g, "\\'")}', '${escapeHtml(rule).replace(/'/g, "\\'")}')" style="margin-right: 5px;">Edit</button>
                             <button class="btn btn-danger" onclick="deleteSectionOperation(${index})">Delete</button>
                         </td>
                     </tr>
@@ -1294,6 +1301,7 @@
         async function addSectionOperation() {
             const operationName = document.getElementById('new-section-operation').value.trim();
             const group = document.getElementById('new-section-group').value.trim();
+            const rule = document.getElementById('new-section-rule').value.trim();
 
             if (!operationName) {
                 showAlert('section-operations-alert', 'Please enter a section operation name', 'error');
@@ -1304,6 +1312,9 @@
                 const body = { operationName };
                 if (group) {
                     body.group = group;
+                }
+                if (rule) {
+                    body.rule = rule;
                 }
 
                 const response = await fetch('/api/section-operations', {
@@ -1320,6 +1331,7 @@
                     showAlert('section-operations-alert', 'Section operation added successfully', 'success');
                     document.getElementById('new-section-operation').value = '';
                     document.getElementById('new-section-group').value = '';
+                    document.getElementById('new-section-rule').value = '';
                     loadSectionOperations();
                 } else {
                     showAlert('section-operations-alert', 'Error: ' + result.error, 'error');
@@ -1329,10 +1341,11 @@
             }
         }
 
-        function editSectionOperation(index, currentOperationName, currentGroup) {
+        function editSectionOperation(index, currentOperationName, currentGroup, currentRule) {
             // Populate the input fields with existing values
             document.getElementById('new-section-operation').value = currentOperationName || '';
             document.getElementById('new-section-group').value = currentGroup || '';
+            document.getElementById('new-section-rule').value = currentRule || '';
 
             // Scroll to the form
             document.getElementById('new-section-operation').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1352,6 +1365,7 @@
         async function updateSectionOperation(index) {
             const operationName = document.getElementById('new-section-operation').value.trim();
             const group = document.getElementById('new-section-group').value.trim();
+            const rule = document.getElementById('new-section-rule').value.trim();
 
             if (!operationName) {
                 showAlert('section-operations-alert', 'Please enter a section operation name', 'error');
@@ -1362,6 +1376,9 @@
                 const body = { operationName };
                 if (group) {
                     body.group = group;
+                }
+                if (rule) {
+                    body.rule = rule;
                 }
 
                 const response = await fetch(`/api/section-operations/${index}`, {
@@ -1378,6 +1395,7 @@
                     showAlert('section-operations-alert', 'Section operation updated successfully', 'success');
                     document.getElementById('new-section-operation').value = '';
                     document.getElementById('new-section-group').value = '';
+                    document.getElementById('new-section-rule').value = '';
                     loadSectionOperations();
                 } else {
                     showAlert('section-operations-alert', 'Error: ' + result.error, 'error');
