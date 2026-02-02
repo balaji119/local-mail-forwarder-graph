@@ -56,7 +56,7 @@ if (!fs.existsSync(OPERATIONS_FILE)) {
 // Initialize section-operations.json if it doesn't exist (with default values)
 if (!fs.existsSync(SECTION_OPERATIONS_FILE)) {
   const defaultSectionOperations = [
-    "Square Cut"
+    { OperationName: "Square Cut" }
   ];
   fs.writeFileSync(SECTION_OPERATIONS_FILE, JSON.stringify(defaultSectionOperations, null, 2), 'utf8');
 }
@@ -498,8 +498,21 @@ app.get('/api/section-operations', (req, res) => {
       return res.json([]);
     }
     const content = fs.readFileSync(SECTION_OPERATIONS_FILE, 'utf8');
-    const sectionOperations = JSON.parse(content);
-    res.json(Array.isArray(sectionOperations) ? sectionOperations : []);
+    let sectionOperations = JSON.parse(content);
+    
+    // Normalize old format (strings) to new format (objects)
+    if (Array.isArray(sectionOperations)) {
+      sectionOperations = sectionOperations.map(op => {
+        if (typeof op === 'string') {
+          return { OperationName: op };
+        }
+        return op;
+      });
+    } else {
+      sectionOperations = [];
+    }
+    
+    res.json(sectionOperations);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -508,9 +521,9 @@ app.get('/api/section-operations', (req, res) => {
 // Add a new section operation
 app.post('/api/section-operations', (req, res) => {
   try {
-    const { operation } = req.body;
+    const { operationName, group } = req.body;
 
-    if (!operation || typeof operation !== 'string' || !operation.trim()) {
+    if (!operationName || typeof operationName !== 'string' || !operationName.trim()) {
       return res.status(400).json({ error: 'Operation name is required and must be a non-empty string' });
     }
 
@@ -519,18 +532,36 @@ app.post('/api/section-operations', (req, res) => {
     }
 
     const content = fs.readFileSync(SECTION_OPERATIONS_FILE, 'utf8');
-    const sectionOperations = JSON.parse(content);
+    let sectionOperations = JSON.parse(content);
 
     if (!Array.isArray(sectionOperations)) {
       return res.status(500).json({ error: 'Section operations file is corrupted' });
     }
 
-    // Check for duplicates
-    if (sectionOperations.includes(operation.trim())) {
+    // Normalize old format to new format
+    sectionOperations = sectionOperations.map(op => {
+      if (typeof op === 'string') {
+        return { OperationName: op };
+      }
+      return op;
+    });
+
+    // Check for duplicates (by OperationName)
+    const trimmedOperationName = operationName.trim();
+    if (sectionOperations.some(op => {
+      const opName = typeof op === 'string' ? op : op.OperationName;
+      return opName === trimmedOperationName;
+    })) {
       return res.status(400).json({ error: 'Operation already exists' });
     }
 
-    sectionOperations.push(operation.trim());
+    // Create new operation object
+    const newOperation = { OperationName: trimmedOperationName };
+    if (group && typeof group === 'string' && group.trim()) {
+      newOperation.Group = group.trim();
+    }
+
+    sectionOperations.push(newOperation);
     fs.writeFileSync(SECTION_OPERATIONS_FILE, JSON.stringify(sectionOperations, null, 2), 'utf8');
     res.json({ success: true, message: 'Section operation added successfully', sectionOperations });
   } catch (err) {
@@ -542,13 +573,13 @@ app.post('/api/section-operations', (req, res) => {
 app.put('/api/section-operations/:index', (req, res) => {
   try {
     const index = parseInt(req.params.index);
-    const { operation } = req.body;
+    const { operationName, group } = req.body;
 
     if (isNaN(index) || index < 0) {
       return res.status(400).json({ error: 'Invalid index' });
     }
 
-    if (!operation || typeof operation !== 'string' || !operation.trim()) {
+    if (!operationName || typeof operationName !== 'string' || !operationName.trim()) {
       return res.status(400).json({ error: 'Operation name is required and must be a non-empty string' });
     }
 
@@ -557,23 +588,41 @@ app.put('/api/section-operations/:index', (req, res) => {
     }
 
     const content = fs.readFileSync(SECTION_OPERATIONS_FILE, 'utf8');
-    const sectionOperations = JSON.parse(content);
+    let sectionOperations = JSON.parse(content);
 
     if (!Array.isArray(sectionOperations)) {
       return res.status(500).json({ error: 'Section operations file is corrupted' });
     }
+
+    // Normalize old format to new format
+    sectionOperations = sectionOperations.map(op => {
+      if (typeof op === 'string') {
+        return { OperationName: op };
+      }
+      return op;
+    });
 
     if (index >= sectionOperations.length) {
       return res.status(404).json({ error: 'Index out of range' });
     }
 
     // Check for duplicates (excluding current index)
-    const trimmedOperation = operation.trim();
-    if (sectionOperations.some((op, i) => i !== index && op === trimmedOperation)) {
+    const trimmedOperationName = operationName.trim();
+    if (sectionOperations.some((op, i) => {
+      if (i === index) return false;
+      const opName = typeof op === 'string' ? op : op.OperationName;
+      return opName === trimmedOperationName;
+    })) {
       return res.status(400).json({ error: 'Operation already exists' });
     }
 
-    sectionOperations[index] = trimmedOperation;
+    // Update operation object
+    const updatedOperation = { OperationName: trimmedOperationName };
+    if (group && typeof group === 'string' && group.trim()) {
+      updatedOperation.Group = group.trim();
+    }
+
+    sectionOperations[index] = updatedOperation;
     fs.writeFileSync(SECTION_OPERATIONS_FILE, JSON.stringify(sectionOperations, null, 2), 'utf8');
     res.json({ success: true, message: 'Section operation updated successfully', sectionOperations });
   } catch (err) {

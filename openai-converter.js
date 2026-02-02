@@ -191,7 +191,19 @@ function loadSectionOperations() {
       const content = fs.readFileSync(sectionOperationsFile, 'utf8');
       const sectionOperations = JSON.parse(content);
       if (Array.isArray(sectionOperations) && sectionOperations.length > 0) {
-        return sectionOperations.map(op => ({ OperationName: op }));
+        return sectionOperations.map(op => {
+          // Handle old format (string) - backward compatibility
+          if (typeof op === 'string') {
+            return { OperationName: op };
+          }
+          // Handle new format (object with OperationName and optional Group)
+          const result = { OperationName: op.OperationName || op };
+          // Only include Group if it's specified and not empty
+          if (op.Group && typeof op.Group === 'string' && op.Group.trim()) {
+            result.Group = op.Group.trim();
+          }
+          return result;
+        });
       }
     }
   } catch (err) {

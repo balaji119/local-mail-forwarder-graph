@@ -159,6 +159,32 @@
             background: #f8f9fa;
             font-weight: 600;
             color: #555;
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+            padding-right: 30px;
+        }
+        
+        .mapping-table th:hover {
+            background: #e9ecef;
+        }
+        
+        .mapping-table th.sortable::after {
+            content: ' ↕';
+            position: absolute;
+            right: 10px;
+            opacity: 0.5;
+            font-size: 12px;
+        }
+        
+        .mapping-table th.sort-asc::after {
+            content: ' ↑';
+            opacity: 1;
+        }
+        
+        .mapping-table th.sort-desc::after {
+            content: ' ↓';
+            opacity: 1;
         }
         
         .mapping-table tr:hover {
@@ -259,7 +285,7 @@
         <div class="tabs">
             <button class="tab active" onclick="switchTab('mapping')">Stock Mapping</button>
             <button class="tab" onclick="switchTab('operations')">Job Operations</button>
-            <button class="tab" onclick="switchTab('section-operations')">SectionOperations</button>
+            <button class="tab" onclick="switchTab('section-operations')">Section Operations</button>
             <button class="tab" onclick="switchTab('folders')">Folders</button>
             <button class="tab" onclick="switchTab('settings')">Settings</button>
             <button class="tab" onclick="switchTab('logs')">Logs</button>
@@ -330,6 +356,11 @@
             <div class="form-group">
                 <label for="new-section-operation">Section Operation Name:</label>
                 <input type="text" id="new-section-operation" placeholder="e.g., Square Cut">
+            </div>
+
+            <div class="form-group">
+                <label for="new-section-group">Group (optional):</label>
+                <input type="text" id="new-section-group" placeholder="e.g., Die cut to shape">
             </div>
 
             <button class="btn btn-primary" onclick="addSectionOperation()">Add Section Operation</button>
@@ -450,9 +481,26 @@
         
         // Store full mapping data for filtering
         let allMappings = {};
+        let stockDefinitionsMap = {}; // Map stock code to description
+        let currentSortColumn = null;
+        let currentSortDirection = 'asc';
         
         async function loadMappings() {
             try {
+                // Load stock definitions for descriptions
+                try {
+                    const stockResponse = await fetch('/api/printiq-stock-definitions');
+                    const stockDefinitions = await stockResponse.json();
+                    stockDefinitionsMap = {};
+                    stockDefinitions.forEach(stock => {
+                        if (stock.code) {
+                            stockDefinitionsMap[stock.code] = stock.description || '';
+                        }
+                    });
+                } catch (err) {
+                    console.warn('Failed to load stock definitions:', err);
+                }
+                
                 const response = await fetch('/api/stock-mapping');
                 allMappings = await response.json();
                 
@@ -504,7 +552,92 @@
             resultsDiv.textContent = `Showing ${filteredCount} of ${totalCount} mapping${totalCount !== 1 ? 's' : ''}`;
             resultsDiv.style.display = 'block';
             
-            displayMappings(filtered);
+            // Apply sorting if active
+            if (currentSortColumn) {
+                const sorted = sortMappings(filtered, currentSortColumn, currentSortDirection);
+                displayMappings(sorted);
+            } else {
+                displayMappings(filtered);
+            }
+        }
+        
+        function sortMappings(mapping, sortColumn, direction) {
+            const keys = Object.keys(mapping);
+            const sortedKeys = [...keys].sort((a, b) => {
+                const mappingDataA = mapping[a];
+                const mappingDataB = mapping[b];
+                
+                let valueA, valueB;
+                
+                switch(sortColumn) {
+                    case 'key':
+                        valueA = a.toLowerCase();
+                        valueB = b.toLowerCase();
+                        break;
+                    case 'code':
+                        valueA = (typeof mappingDataA === 'string' ? mappingDataA : (mappingDataA.value || '')).toLowerCase();
+                        valueB = (typeof mappingDataB === 'string' ? mappingDataB : (mappingDataB.value || '')).toLowerCase();
+                        break;
+                    case 'description':
+                        const codeA = typeof mappingDataA === 'string' ? mappingDataA : (mappingDataA.value || '');
+                        const codeB = typeof mappingDataB === 'string' ? mappingDataB : (mappingDataB.value || '');
+                        valueA = (stockDefinitionsMap[codeA] || '').toLowerCase();
+                        valueB = (stockDefinitionsMap[codeB] || '').toLowerCase();
+                        break;
+                    case 'processFront':
+                        valueA = (typeof mappingDataA === 'object' ? (mappingDataA.processFront || '') : '').toLowerCase();
+                        valueB = (typeof mappingDataB === 'object' ? (mappingDataB.processFront || '') : '').toLowerCase();
+                        break;
+                    case 'processReverse':
+                        valueA = (typeof mappingDataA === 'object' ? (mappingDataA.processReverse || '') : '').toLowerCase();
+                        valueB = (typeof mappingDataB === 'object' ? (mappingDataB.processReverse || '') : '').toLowerCase();
+                        break;
+                    default:
+                        return 0;
+                }
+                
+                if (valueA < valueB) return direction === 'asc' ? -1 : 1;
+                if (valueA > valueB) return direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+            
+            const sortedMapping = {};
+            sortedKeys.forEach(key => {
+                sortedMapping[key] = mapping[key];
+            });
+            
+            return sortedMapping;
+        }
+        
+        function handleSort(column) {
+            if (currentSortColumn === column) {
+                // Toggle direction if clicking same column
+                currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                // New column, default to ascending
+                currentSortColumn = column;
+                currentSortDirection = 'asc';
+            }
+            
+            // Get current filtered mappings or all mappings
+            const searchInput = document.getElementById('mapping-search');
+            const searchTerm = searchInput && searchInput.value.trim() !== '' ? searchInput.value : '';
+            const mappingsToSort = searchTerm ? 
+                Object.keys(allMappings).filter(key => {
+                    const mappingData = allMappings[key];
+                    const value = typeof mappingData === 'string' ? mappingData : (mappingData.value || '');
+                    const processFront = typeof mappingData === 'object' ? (mappingData.processFront || '') : '';
+                    const processReverse = typeof mappingData === 'object' ? (mappingData.processReverse || '') : '';
+                    const searchLower = searchTerm.toLowerCase();
+                    return key.toLowerCase().includes(searchLower) ||
+                           value.toLowerCase().includes(searchLower) ||
+                           processFront.toLowerCase().includes(searchLower) ||
+                           processReverse.toLowerCase().includes(searchLower);
+                }).reduce((acc, key) => { acc[key] = allMappings[key]; return acc; }, {}) :
+                allMappings;
+            
+            const sorted = sortMappings(mappingsToSort, currentSortColumn, currentSortDirection);
+            displayMappings(sorted);
         }
         
         function displayMappings(mapping) {
@@ -518,7 +651,26 @@
                 return;
             }
             
-            let html = '<table class="mapping-table"><thead><tr><th>Stock Key</th><th>Stock Code</th><th>Process Front</th><th>Process Reverse</th><th>Actions</th></tr></thead><tbody>';
+            // Determine sort classes for headers
+            const getSortClass = (column) => {
+                if (currentSortColumn === column) {
+                    return currentSortDirection === 'asc' ? 'sortable sort-asc' : 'sortable sort-desc';
+                }
+                return 'sortable';
+            };
+            
+            let html = `<table class="mapping-table">
+                <thead>
+                    <tr>
+                        <th class="${getSortClass('key')}" onclick="handleSort('key')">Stock Key</th>
+                        <th class="${getSortClass('code')}" onclick="handleSort('code')">Stock Code</th>
+                        <th class="${getSortClass('description')}" onclick="handleSort('description')">Stock Description</th>
+                        <th class="${getSortClass('processFront')}" onclick="handleSort('processFront')">Process Front</th>
+                        <th class="${getSortClass('processReverse')}" onclick="handleSort('processReverse')">Process Reverse</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>`;
             
             keys.forEach(key => {
                 const mappingData = mapping[key];
@@ -526,11 +678,13 @@
                 const value = typeof mappingData === 'string' ? mappingData : (mappingData.value || '');
                 const processFront = typeof mappingData === 'object' ? (mappingData.processFront || '') : '';
                 const processReverse = typeof mappingData === 'object' ? (mappingData.processReverse || '') : '';
+                const stockDescription = stockDefinitionsMap[value] || '';
                 
                 html += `
                     <tr>
                         <td class="key-cell">${escapeHtml(key)}</td>
                         <td class="value-cell">${escapeHtml(value)}</td>
+                        <td class="value-cell">${escapeHtml(stockDescription)}</td>
                         <td class="value-cell">${escapeHtml(processFront)}</td>
                         <td class="value-cell">${escapeHtml(processReverse)}</td>
                         <td class="actions-cell">
@@ -1113,15 +1267,20 @@
                 return;
             }
 
-            let html = '<table class="mapping-table"><thead><tr><th>#</th><th>Section Operation Name</th><th>Actions</th></tr></thead><tbody>';
+            let html = '<table class="mapping-table"><thead><tr><th>#</th><th>Operation Name</th><th>Group</th><th>Actions</th></tr></thead><tbody>';
 
             sectionOperations.forEach((operation, index) => {
+                // Handle both old format (string) and new format (object)
+                const operationName = typeof operation === 'string' ? operation : (operation.OperationName || '');
+                const group = typeof operation === 'object' ? (operation.Group || '') : '';
+                
                 html += `
                     <tr>
                         <td style="width: 50px;">${index + 1}</td>
-                        <td class="value-cell">${escapeHtml(operation)}</td>
+                        <td class="value-cell">${escapeHtml(operationName)}</td>
+                        <td class="value-cell">${escapeHtml(group)}</td>
                         <td class="actions-cell">
-                            <button class="btn btn-primary" onclick="editSectionOperation(${index}, '${escapeHtml(operation).replace(/'/g, "\\'")}')" style="margin-right: 5px;">Edit</button>
+                            <button class="btn btn-primary" onclick="editSectionOperation(${index}, '${escapeHtml(operationName).replace(/'/g, "\\'")}', '${escapeHtml(group).replace(/'/g, "\\'")}')" style="margin-right: 5px;">Edit</button>
                             <button class="btn btn-danger" onclick="deleteSectionOperation(${index})">Delete</button>
                         </td>
                     </tr>
@@ -1133,20 +1292,26 @@
         }
 
         async function addSectionOperation() {
-            const operation = document.getElementById('new-section-operation').value.trim();
+            const operationName = document.getElementById('new-section-operation').value.trim();
+            const group = document.getElementById('new-section-group').value.trim();
 
-            if (!operation) {
+            if (!operationName) {
                 showAlert('section-operations-alert', 'Please enter a section operation name', 'error');
                 return;
             }
 
             try {
+                const body = { operationName };
+                if (group) {
+                    body.group = group;
+                }
+
                 const response = await fetch('/api/section-operations', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ operation })
+                    body: JSON.stringify(body)
                 });
 
                 const result = await response.json();
@@ -1154,6 +1319,7 @@
                 if (response.ok) {
                     showAlert('section-operations-alert', 'Section operation added successfully', 'success');
                     document.getElementById('new-section-operation').value = '';
+                    document.getElementById('new-section-group').value = '';
                     loadSectionOperations();
                 } else {
                     showAlert('section-operations-alert', 'Error: ' + result.error, 'error');
@@ -1163,9 +1329,10 @@
             }
         }
 
-        function editSectionOperation(index, currentOperation) {
-            // Populate the input field with existing value
-            document.getElementById('new-section-operation').value = currentOperation;
+        function editSectionOperation(index, currentOperationName, currentGroup) {
+            // Populate the input fields with existing values
+            document.getElementById('new-section-operation').value = currentOperationName || '';
+            document.getElementById('new-section-group').value = currentGroup || '';
 
             // Scroll to the form
             document.getElementById('new-section-operation').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1183,20 +1350,26 @@
         }
 
         async function updateSectionOperation(index) {
-            const operation = document.getElementById('new-section-operation').value.trim();
+            const operationName = document.getElementById('new-section-operation').value.trim();
+            const group = document.getElementById('new-section-group').value.trim();
 
-            if (!operation) {
+            if (!operationName) {
                 showAlert('section-operations-alert', 'Please enter a section operation name', 'error');
                 return;
             }
 
             try {
+                const body = { operationName };
+                if (group) {
+                    body.group = group;
+                }
+
                 const response = await fetch(`/api/section-operations/${index}`, {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ operation })
+                    body: JSON.stringify(body)
                 });
 
                 const result = await response.json();
@@ -1204,6 +1377,7 @@
                 if (response.ok) {
                     showAlert('section-operations-alert', 'Section operation updated successfully', 'success');
                     document.getElementById('new-section-operation').value = '';
+                    document.getElementById('new-section-group').value = '';
                     loadSectionOperations();
                 } else {
                     showAlert('section-operations-alert', 'Error: ' + result.error, 'error');
