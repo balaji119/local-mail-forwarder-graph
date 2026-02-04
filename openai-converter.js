@@ -350,7 +350,7 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
     },
     QuoteContact: loadQuoteContact(),
     Deliveries: [], // ALWAYS empty
-    TargetFreightPrice: "10.00",
+    TargetFreightPrice: "",
     CustomerCode: "C00014",
     AcceptQuote: false,
     JobDescription: null,
@@ -422,22 +422,28 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
   // Customer reference fallback to rfq_no
   final.CustomerReference = extracted.rfq_no || null;
 
-  // Default target freight (string per your sample)
-  final.TargetFreightPrice = "10.00";
+  // Target freight should be empty (not $10)
+  final.TargetFreightPrice = "";
 
   // Base selected quantity values
   final.SelectedQuantity.Quantity = Number(quantity);
-  final.SelectedQuantity.Kinds = kindsArray.length > 1 ? 0: 1;
-
-  // If multiple kinds -> build AdvancedKinds structure using individual kind counts
-  if (kindsArray.length > 1) {    
-    const advKinds =  extracted.kinds.map((kindObj, index) => {
-          return {
-            Name: kindsArray[index] || `Kind-${index + 1}`,
-            Quantity: Number(kindObj.count),
-            Sections: [{ SectionNumber: 1 }]
-          };
-        });
+  
+  // Handle kinds: if we have multiple kinds, use AdvancedKinds; otherwise set Kinds appropriately
+  if (kindsArray.length > 1) {
+    // Multiple kinds - use AdvancedKinds structure
+    final.SelectedQuantity.Kinds = 0;
+    
+    const advKinds = extracted.kinds.map((kindObj, index) => {
+      // Use the full kind name from kindObj.kind, not just the normalized array value
+      const kindName = (kindObj && typeof kindObj === 'object' && kindObj.kind) 
+        ? String(kindObj.kind).trim() 
+        : (kindsArray[index] || `Kind-${index + 1}`);
+      return {
+        Name: kindName,
+        Quantity: Number(kindObj.count || 0),
+        Sections: [{ SectionNumber: 1 }]
+      };
+    });
 
     final.SelectedQuantity.TargetRetailPrice = extracted.TargetRetailPrice != null ? Number(extracted.TargetRetailPrice) : 0;
     final.SelectedQuantity.TargetWholesalePrice = extracted.TargetWholesalePrice != null ? Number(extracted.TargetWholesalePrice) : 0;
@@ -446,11 +452,21 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
       Kinds: advKinds
     };
 
-    // Update total quantity to sum of individual kind quantities
+    // Update total quantity to sum of individual kind quantities (don't multiply, just sum)
     const sumAdv = advKinds.reduce((s, k) => s + (Number(k.Quantity) || 0), 0);
     if (sumAdv > 0) {
       final.SelectedQuantity.Quantity = sumAdv;
     }
+  } else if (kindsArray.length === 1) {
+    // Single kind - set Kinds to 1, use regular quantity
+    final.SelectedQuantity.Kinds = 1;
+    // If the kind has a count, use it; otherwise use the total quantity
+    if (extracted.kinds && extracted.kinds[0] && extracted.kinds[0].count) {
+      final.SelectedQuantity.Quantity = Number(extracted.kinds[0].count);
+    }
+  } else {
+    // No kinds - set Kinds to 1, use total quantity
+    final.SelectedQuantity.Kinds = 1;
   }
 
   // Ensure numeric typing
