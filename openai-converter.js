@@ -155,8 +155,9 @@ function loadStockMapping() {
   return {};
 }
 
-// Load operations array from file
-function loadOperations() {
+// Load job operations array from file
+// If extractedPrint is provided, filter operations based on Rule field
+function loadOperations(extractedPrint) {
   const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
   const operationsFile = path.join(DATA_DIR, 'operations.json');
 
@@ -165,7 +166,29 @@ function loadOperations() {
       const content = fs.readFileSync(operationsFile, 'utf8');
       const operations = JSON.parse(content);
       if (Array.isArray(operations) && operations.length > 0) {
-        return operations.map(op => ({ OperationName: op }));
+        const printLower = extractedPrint ? String(extractedPrint).toLowerCase() : '';
+
+        const filteredOperations = operations.filter(op => {
+          // old format (string) - always include
+          if (typeof op === 'string') return true;
+
+          // new format (object) - if no Rule, include
+          if (!op || typeof op !== 'object') return false;
+          if (!op.Rule || typeof op.Rule !== 'string' || !op.Rule.trim()) return true;
+
+          // if Rule is specified, include only when extracted.print contains rule
+          const ruleLower = op.Rule.trim().toLowerCase();
+          return printLower.includes(ruleLower);
+        });
+
+        return filteredOperations.map(op => {
+          if (typeof op === 'string') return { OperationName: op };
+          const result = { OperationName: op.OperationName || '' };
+          if (op.Group && typeof op.Group === 'string' && op.Group.trim()) {
+            result.Group = op.Group.trim();
+          }
+          return result;
+        }).filter(op => op.OperationName && String(op.OperationName).trim() !== '');
       }
     }
   } catch (err) {
@@ -342,7 +365,7 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
           SideOperations: []
         }
       ],
-      JobOperations: loadOperations()
+      JobOperations: loadOperations(extracted.print)
     },
     SelectedQuantity: {
       Quantity: 0,

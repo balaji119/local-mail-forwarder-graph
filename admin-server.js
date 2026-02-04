@@ -376,8 +376,19 @@ app.get('/api/operations', (req, res) => {
       return res.json([]);
     }
     const content = fs.readFileSync(OPERATIONS_FILE, 'utf8');
-    const operations = JSON.parse(content);
-    res.json(Array.isArray(operations) ? operations : []);
+    let operations = JSON.parse(content);
+
+    // Normalize old format (strings) to new format (objects)
+    if (Array.isArray(operations)) {
+      operations = operations.map(op => {
+        if (typeof op === 'string') return { OperationName: op };
+        return op;
+      });
+    } else {
+      operations = [];
+    }
+
+    res.json(operations);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -386,9 +397,13 @@ app.get('/api/operations', (req, res) => {
 // Add a new operation
 app.post('/api/operations', (req, res) => {
   try {
-    const { operation } = req.body;
-    
-    if (!operation || typeof operation !== 'string' || !operation.trim()) {
+    // Backward compatible with old UI: { operation: "Preflight" }
+    // New format: { operationName: "Preflight", group?: "...", rule?: "..." }
+    const operationName = (req.body && (req.body.operationName ?? req.body.operation)) || '';
+    const group = (req.body && req.body.group) || '';
+    const rule = (req.body && req.body.rule) || '';
+
+    if (!operationName || typeof operationName !== 'string' || !operationName.trim()) {
       return res.status(400).json({ error: 'Operation name is required and must be a non-empty string' });
     }
     
@@ -397,18 +412,33 @@ app.post('/api/operations', (req, res) => {
     }
     
     const content = fs.readFileSync(OPERATIONS_FILE, 'utf8');
-    const operations = JSON.parse(content);
+    let operations = JSON.parse(content);
     
     if (!Array.isArray(operations)) {
       return res.status(500).json({ error: 'Operations file is corrupted' });
     }
-    
-    // Check for duplicates
-    if (operations.includes(operation.trim())) {
-      return res.status(400).json({ error: 'Operation already exists' });
+
+    const trimmedName = operationName.trim();
+
+    // Check for duplicates (by OperationName)
+    const exists = operations.some(op => {
+      if (typeof op === 'string') return op === trimmedName;
+      return op && typeof op === 'object' && String(op.OperationName || '').trim() === trimmedName;
+    });
+    if (exists) return res.status(400).json({ error: 'Operation already exists' });
+
+    // If group/rule provided, store object; otherwise store string for backward compatibility
+    const hasGroup = typeof group === 'string' && group.trim();
+    const hasRule = typeof rule === 'string' && rule.trim();
+    if (hasGroup || hasRule) {
+      const entry = { OperationName: trimmedName };
+      if (hasGroup) entry.Group = group.trim();
+      if (hasRule) entry.Rule = rule.trim();
+      operations.push(entry);
+    } else {
+      operations.push(trimmedName);
     }
-    
-    operations.push(operation.trim());
+
     fs.writeFileSync(OPERATIONS_FILE, JSON.stringify(operations, null, 2), 'utf8');
     res.json({ success: true, message: 'Operation added successfully', operations });
   } catch (err) {
@@ -420,13 +450,15 @@ app.post('/api/operations', (req, res) => {
 app.put('/api/operations/:index', (req, res) => {
   try {
     const index = parseInt(req.params.index);
-    const { operation } = req.body;
+    const operationName = (req.body && (req.body.operationName ?? req.body.operation)) || '';
+    const group = (req.body && req.body.group) || '';
+    const rule = (req.body && req.body.rule) || '';
     
     if (isNaN(index) || index < 0) {
       return res.status(400).json({ error: 'Invalid index' });
     }
     
-    if (!operation || typeof operation !== 'string' || !operation.trim()) {
+    if (!operationName || typeof operationName !== 'string' || !operationName.trim()) {
       return res.status(400).json({ error: 'Operation name is required and must be a non-empty string' });
     }
     
@@ -446,12 +478,27 @@ app.put('/api/operations/:index', (req, res) => {
     }
     
     // Check for duplicates (excluding current index)
-    const trimmedOperation = operation.trim();
-    if (operations.some((op, i) => i !== index && op === trimmedOperation)) {
+    const trimmedOperation = operationName.trim();
+    const dup = operations.some((op, i) => {
+      if (i === index) return false;
+      if (typeof op === 'string') return op === trimmedOperation;
+      return op && typeof op === 'object' && String(op.OperationName || '').trim() === trimmedOperation;
+    });
+    if (dup) {
       return res.status(400).json({ error: 'Operation already exists' });
     }
-    
-    operations[index] = trimmedOperation;
+
+    const hasGroup = typeof group === 'string' && group.trim();
+    const hasRule = typeof rule === 'string' && rule.trim();
+    if (hasGroup || hasRule) {
+      const entry = { OperationName: trimmedOperation };
+      if (hasGroup) entry.Group = group.trim();
+      if (hasRule) entry.Rule = rule.trim();
+      operations[index] = entry;
+    } else {
+      operations[index] = trimmedOperation;
+    }
+
     fs.writeFileSync(OPERATIONS_FILE, JSON.stringify(operations, null, 2), 'utf8');
     res.json({ success: true, message: 'Operation updated successfully', operations });
   } catch (err) {

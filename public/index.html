@@ -344,6 +344,16 @@
                 <input type="text" id="new-operation" placeholder="e.g., Preflight">
             </div>
 
+            <div class="form-group">
+                <label for="new-operation-group">Group (optional):</label>
+                <input type="text" id="new-operation-group" placeholder="e.g., Finishing">
+            </div>
+
+            <div class="form-group">
+                <label for="new-operation-rule">Rule (optional):</label>
+                <input type="text" id="new-operation-rule" placeholder="e.g., drill holes (only include if this text appears in PRINT field)">
+            </div>
+
             <button class="btn btn-primary" onclick="addOperation()">Add Operation</button>
             <button class="btn btn-success" onclick="loadOperations()" style="margin-left: 10px;">Refresh</button>
 
@@ -1131,15 +1141,20 @@
                 return;
             }
             
-            let html = '<table class="mapping-table"><thead><tr><th>#</th><th>Operation Name</th><th>Actions</th></tr></thead><tbody>';
+            let html = '<table class="mapping-table"><thead><tr><th>#</th><th>Operation Name</th><th>Group</th><th>Rule</th><th>Actions</th></tr></thead><tbody>';
             
             operations.forEach((operation, index) => {
+                const operationName = typeof operation === 'string' ? operation : (operation.OperationName || '');
+                const group = typeof operation === 'object' ? (operation.Group || '') : '';
+                const rule = typeof operation === 'object' ? (operation.Rule || '') : '';
                 html += `
                     <tr>
                         <td style="width: 50px;">${index + 1}</td>
-                        <td class="value-cell">${escapeHtml(operation)}</td>
+                        <td class="value-cell">${escapeHtml(operationName)}</td>
+                        <td class="value-cell">${escapeHtml(group)}</td>
+                        <td class="value-cell">${escapeHtml(rule)}</td>
                         <td class="actions-cell">
-                            <button class="btn btn-primary" onclick="editOperation(${index}, '${escapeHtml(operation).replace(/'/g, "\\'")}')" style="margin-right: 5px;">Edit</button>
+                            <button class="btn btn-primary" onclick="editOperation(${index}, '${escapeHtml(operationName).replace(/'/g, "\\'")}', '${escapeHtml(group).replace(/'/g, "\\'")}', '${escapeHtml(rule).replace(/'/g, "\\'")}')" style="margin-right: 5px;">Edit</button>
                             <button class="btn btn-danger" onclick="deleteOperation(${index})">Delete</button>
                         </td>
                     </tr>
@@ -1152,6 +1167,8 @@
         
         async function addOperation() {
             const operation = document.getElementById('new-operation').value.trim();
+            const group = (document.getElementById('new-operation-group')?.value || '').trim();
+            const rule = (document.getElementById('new-operation-rule')?.value || '').trim();
             
             if (!operation) {
                 showAlert('operations-alert', 'Please enter an operation name', 'error');
@@ -1164,7 +1181,7 @@
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ operation })
+                    body: JSON.stringify({ operationName: operation, group, rule })
                 });
                 
                 const result = await response.json();
@@ -1172,6 +1189,8 @@
                 if (response.ok) {
                     showAlert('operations-alert', 'Operation added successfully', 'success');
                     document.getElementById('new-operation').value = '';
+                    if (document.getElementById('new-operation-group')) document.getElementById('new-operation-group').value = '';
+                    if (document.getElementById('new-operation-rule')) document.getElementById('new-operation-rule').value = '';
                     loadOperations();
                 } else {
                     showAlert('operations-alert', 'Error: ' + result.error, 'error');
@@ -1181,9 +1200,11 @@
             }
         }
         
-        function editOperation(index, currentOperation) {
+        function editOperation(index, currentOperation, currentGroup, currentRule) {
             // Populate the input field with existing value
             document.getElementById('new-operation').value = currentOperation;
+            if (document.getElementById('new-operation-group')) document.getElementById('new-operation-group').value = currentGroup || '';
+            if (document.getElementById('new-operation-rule')) document.getElementById('new-operation-rule').value = currentRule || '';
             
             // Scroll to the form
             document.getElementById('new-operation').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1202,6 +1223,8 @@
         
         async function updateOperation(index) {
             const operation = document.getElementById('new-operation').value.trim();
+            const group = (document.getElementById('new-operation-group')?.value || '').trim();
+            const rule = (document.getElementById('new-operation-rule')?.value || '').trim();
             
             if (!operation) {
                 showAlert('operations-alert', 'Please enter an operation name', 'error');
@@ -1214,7 +1237,7 @@
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ operation })
+                    body: JSON.stringify({ operationName: operation, group, rule })
                 });
                 
                 const result = await response.json();
@@ -1222,6 +1245,8 @@
                 if (response.ok) {
                     showAlert('operations-alert', 'Operation updated successfully', 'success');
                     document.getElementById('new-operation').value = '';
+                    if (document.getElementById('new-operation-group')) document.getElementById('new-operation-group').value = '';
+                    if (document.getElementById('new-operation-rule')) document.getElementById('new-operation-rule').value = '';
                     loadOperations();
                 } else {
                     showAlert('operations-alert', 'Error: ' + result.error, 'error');
