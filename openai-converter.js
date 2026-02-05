@@ -45,21 +45,29 @@ IMPORTANT RULES:
    - null for width / height
    - [] for kinds
    - 0 for quantity
-4. KINDS EXTRACTION RULES (VERY IMPORTANT):
-   A kind is **any standalone token appearing on its own line**, between SIZE and FINISH/PRINT sections,
+4. KINDS EXTRACTION RULES (CRITICAL - EXTRACT ALL KINDS):
+   You MUST extract ALL kinds from the email without exception. A kind is **any standalone token appearing 
+   on its own line**, typically in a table or list format, between SIZE and FINISH/PRINT sections,
    that is not one of the known headers:
    RFQ, TITLE, PROD, SIZE, PRINT, STOCK, FINISH, PACKING, DELIVERY, Quantity.
 
-   A “standalone token” means:
-   - the entire line contains exactly one word (no spaces)
+   A "standalone token" means:
+   - the entire line contains exactly one word/code (no spaces), OR
+   - it appears as a product/SKU code in a table row
    - allowed characters: letters, digits, hyphens, underscores
    Examples of valid kinds:
+     623869010C01
+     463024038C01
      572406002C01
      561203002C01
      kind1
      KIND_ABC
      SKU-77
      A0HEADER
+   
+   IMPORTANT: If you see a table with multiple rows of codes/kinds, you MUST extract EVERY SINGLE ONE.
+   Do NOT stop after a few - extract them ALL. The email may contain 10, 15, 17, or more kinds.
+   Count how many kinds you extract and make sure you haven't missed any from the table.
 
 5. COUNT EXTRACTION RULES:
    - If the kind line includes a count like “CODE x390” or “CODE ×390”, extract that number.
@@ -471,6 +479,7 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
   final.SelectedQuantity.Quantity = Number(quantity);
   
   // Handle kinds: if we have multiple kinds, use AdvancedKinds; otherwise set Kinds appropriately
+  logger.log(`DEBUG: kindsArray.length=${kindsArray.length}, extracted.kinds=${JSON.stringify(extracted.kinds)}`);
   if (kindsArray.length > 1) {
     // Multiple kinds - use AdvancedKinds structure
     final.SelectedQuantity.Kinds = 0;
@@ -480,12 +489,15 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
       const kindName = (kindObj && typeof kindObj === 'object' && kindObj.kind) 
         ? String(kindObj.kind).trim() 
         : (kindsArray[index] || `Kind-${index + 1}`);
+      const qty = Number(kindObj.count || 0);
+      logger.log(`DEBUG: Kind ${index}: name=${kindName}, qty=${qty}`);
       return {
         Name: kindName,
-        Quantity: Number(kindObj.count || 0),
+        Quantity: qty,
         Sections: [{ SectionNumber: 1 }]
       };
     });
+    logger.log(`DEBUG: advKinds total count=${advKinds.length}`);
 
     final.SelectedQuantity.TargetRetailPrice = extracted.TargetRetailPrice != null ? Number(extracted.TargetRetailPrice) : 0;
     final.SelectedQuantity.TargetWholesalePrice = extracted.TargetWholesalePrice != null ? Number(extracted.TargetWholesalePrice) : 0;
@@ -524,12 +536,17 @@ async function callOpenAIForExtractor(rawText) {
 
   const body = {
     model: MODEL,
-    input: prompt,
+    messages: [
+      {
+        role: "user",
+        content: prompt
+      }
+    ],
     temperature: 0,
-    max_output_tokens: 2000
+    max_tokens: 2000
   };
 
-  const resp = await fetch("https://api.openai.com/v1/responses", {
+  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${OPENAI_API_KEY}`,
@@ -545,21 +562,14 @@ async function callOpenAIForExtractor(rawText) {
 
   const j = await resp.json();
 
-  // extract text
+  // Log finish_reason to detect truncation
+  logger.log(`OpenAI finish_reason: ${j.choices?.[0]?.finish_reason}, usage: ${JSON.stringify(j.usage)}`);
+
+  // extract text from chat completion response
   let text = "";
-  if (Array.isArray(j.output)) {
-    text = j.output.map(o =>
-      typeof o === "string"
-        ? o
-        : o.content?.text ||
-          (Array.isArray(o.content)
-            ? o.content.map(c => c.text || c).join("")
-            : JSON.stringify(o))
-    ).join("\n");
-  } else if (j.outputText) {
-    text = j.outputText;
-  } else if (j.choices?.[0]?.message?.content) {
+  if (j.choices?.[0]?.message?.content) {
     text = j.choices[0].message.content;
+    logger.log(`OpenAI response length: ${text.length} chars`);
   } else {
     text = JSON.stringify(j);
   }
