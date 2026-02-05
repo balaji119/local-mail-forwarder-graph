@@ -90,7 +90,8 @@ ${stockMappingNote}`;
     res.json({ ok: true, createResult, priceInfo, replyResult, shouldMarkAsRead });
   } catch (err) {
     logger.error("Webhook error:", err);
-    res.status(500).json({ ok:false, error: String(err) });
+    logger.error("Error stack:", err.stack);
+    res.status(500).json({ ok:false, error: err.message || String(err), stack: err.stack });
   }
 });
 

@@ -312,12 +312,12 @@ function getStockCodeFromMapping(stockValue) {
     const mappingData = mapping[stockValue];
     // Support both old format (string) and new format (object)
     if (typeof mappingData === 'string') {
-      return { value: mappingData, processFront: 'Standard/Heavy CMYK (160sqm/hr)', processReverse: 'Standard/Heavy CMYK (160sqm/hr)' };
+      return { value: mappingData, processFront: null, processReverse: null };
     }
     return {
       value: mappingData.value || mappingData,
-      processFront: mappingData.processFront || 'Standard/Heavy CMYK (160sqm/hr)',
-      processReverse: mappingData.processReverse || 'Standard/Heavy CMYK (160sqm/hr)'
+      processFront: (mappingData.processFront && mappingData.processFront !== 'None') ? mappingData.processFront : null,
+      processReverse: (mappingData.processReverse && mappingData.processReverse !== 'None') ? mappingData.processReverse : null
     };
   }
   
@@ -327,12 +327,12 @@ function getStockCodeFromMapping(stockValue) {
     if (key.toLowerCase().trim() === stockLower) {
       // Support both old format (string) and new format (object)
       if (typeof value === 'string') {
-        return { value: value, processFront: 'Standard/Heavy CMYK (160sqm/hr)', processReverse: 'Standard/Heavy CMYK (160sqm/hr)' };
+        return { value: value, processFront: null, processReverse: null };
       }
       return {
         value: value.value || value,
-        processFront: value.processFront || 'Standard/Heavy CMYK (160sqm/hr)',
-        processReverse: value.processReverse || 'Standard/Heavy CMYK (160sqm/hr)'
+        processFront: (value.processFront && value.processFront !== 'None') ? value.processFront : null,
+        processReverse: (value.processReverse && value.processReverse !== 'None') ? value.processReverse : null
       };
     }
   }
@@ -404,22 +404,41 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
     const printLower = extracted.print.toLowerCase();
     const singleSidedKeywords = ['single side', '1s', '1 side', 'one side', ' ss '];
     isSingleSided = singleSidedKeywords.some(keyword => printLower.includes(keyword));
-
-    // If single-sided printing detected, set ProcessReverse to None
-    if (isSingleSided) {
-      final.CustomProduct.Sections[0].ProcessReverse = 'None';
-    }
   }
 
   // Update StockCode and Process types based on STOCK value from email using mapping file
   if (extracted.stock) {
     const mappedData = getStockCodeFromMapping(extracted.stock);
+    logger.log("DEBUG: Stock value:", extracted.stock);
+    logger.log("DEBUG: Mapped data:", JSON.stringify(mappedData));
     if (mappedData) {
       final.CustomProduct.Sections[0].StockCode = mappedData.value;
-      final.CustomProduct.Sections[0].ProcessFront = mappedData.processFront;
+      
+      logger.log("DEBUG: ProcessFront from mapping:", mappedData.processFront);
+      logger.log("DEBUG: ProcessReverse from mapping:", mappedData.processReverse);
+      logger.log("DEBUG: Default ProcessFront before override:", final.CustomProduct.Sections[0].ProcessFront);
+      
+      // Use mapping values if provided (not null and not "None"), otherwise keep defaults
+      if (mappedData.processFront && mappedData.processFront !== 'None') {
+        final.CustomProduct.Sections[0].ProcessFront = mappedData.processFront;
+        logger.log("DEBUG: Set ProcessFront from mapping to:", mappedData.processFront);
+      } else {
+        logger.log("DEBUG: Keeping default ProcessFront:", final.CustomProduct.Sections[0].ProcessFront);
+      }
+      // else: keep the default ProcessFront that was already set
 
-      // If single-sided, set ProcessReverse to None; otherwise use mapping value
-      final.CustomProduct.Sections[0].ProcessReverse = isSingleSided ? 'None' : mappedData.processReverse;
+      // If single-sided, set ProcessReverse to None; otherwise use mapping value (or default if mapping is null/None)
+      if (isSingleSided) {
+        final.CustomProduct.Sections[0].ProcessReverse = 'None';
+        logger.log("DEBUG: Set ProcessReverse to None (single-sided)");
+      } else if (mappedData.processReverse && mappedData.processReverse !== 'None') {
+        final.CustomProduct.Sections[0].ProcessReverse = mappedData.processReverse;
+        logger.log("DEBUG: Set ProcessReverse from mapping to:", mappedData.processReverse);
+      } else {
+        logger.log("DEBUG: Keeping default ProcessReverse:", final.CustomProduct.Sections[0].ProcessReverse);
+      }
+      // else: keep the default ProcessReverse that was already set
+      
       stockMappingUsed = true;
     }
   }
@@ -507,7 +526,7 @@ async function callOpenAIForExtractor(rawText) {
     model: MODEL,
     input: prompt,
     temperature: 0,
-    max_output_tokens: 800
+    max_output_tokens: 2000
   };
 
   const resp = await fetch("https://api.openai.com/v1/responses", {
