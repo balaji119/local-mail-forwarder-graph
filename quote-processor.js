@@ -171,7 +171,9 @@ async function processQuote(payload, options = {}) {
     }
 
     logger.log("Create result status:", createResult.status);
-    logger.log("Create result body:", createResult.body);
+    if (createResult.body?.IsError) {
+      logger.log("Create result error:", createResult.body.ErrorMessage);
+    }
 
     // Extract price information
     const priceInfo = extractPriceInfo(createResult);

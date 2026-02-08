@@ -420,12 +420,8 @@ app.post('/api/operations', (req, res) => {
 
     const trimmedName = operationName.trim();
 
-    // Check for duplicates (by OperationName)
-    const exists = operations.some(op => {
-      if (typeof op === 'string') return op === trimmedName;
-      return op && typeof op === 'object' && String(op.OperationName || '').trim() === trimmedName;
-    });
-    if (exists) return res.status(400).json({ error: 'Operation already exists' });
+    // Allow duplicate operation names as long as they have different Rules or Groups
+    // No duplicate check needed - same operation name can have different rules/groups
 
     // If group/rule provided, store object; otherwise store string for backward compatibility
     const hasGroup = typeof group === 'string' && group.trim();
@@ -477,16 +473,9 @@ app.put('/api/operations/:index', (req, res) => {
       return res.status(404).json({ error: 'Index out of range' });
     }
     
-    // Check for duplicates (excluding current index)
+    // Allow duplicate operation names as long as they have different Rules or Groups
+    // No duplicate check needed - same operation name can have different rules/groups
     const trimmedOperation = operationName.trim();
-    const dup = operations.some((op, i) => {
-      if (i === index) return false;
-      if (typeof op === 'string') return op === trimmedOperation;
-      return op && typeof op === 'object' && String(op.OperationName || '').trim() === trimmedOperation;
-    });
-    if (dup) {
-      return res.status(400).json({ error: 'Operation already exists' });
-    }
 
     const hasGroup = typeof group === 'string' && group.trim();
     const hasRule = typeof rule === 'string' && rule.trim();
@@ -593,14 +582,9 @@ app.post('/api/section-operations', (req, res) => {
       return op;
     });
 
-    // Check for duplicates (by OperationName)
+    // Allow duplicate operation names as long as they have different Rules or Groups
+    // No duplicate check needed - same operation name can have different rules/groups
     const trimmedOperationName = operationName.trim();
-    if (sectionOperations.some(op => {
-      const opName = typeof op === 'string' ? op : op.OperationName;
-      return opName === trimmedOperationName;
-    })) {
-      return res.status(400).json({ error: 'Operation already exists' });
-    }
 
     // Create new operation object
     const newOperation = { OperationName: trimmedOperationName };
@@ -656,15 +640,9 @@ app.put('/api/section-operations/:index', (req, res) => {
       return res.status(404).json({ error: 'Index out of range' });
     }
 
-    // Check for duplicates (excluding current index)
+    // Allow duplicate operation names as long as they have different Rules or Groups
+    // No duplicate check needed - same operation name can have different rules/groups
     const trimmedOperationName = operationName.trim();
-    if (sectionOperations.some((op, i) => {
-      if (i === index) return false;
-      const opName = typeof op === 'string' ? op : op.OperationName;
-      return opName === trimmedOperationName;
-    })) {
-      return res.status(400).json({ error: 'Operation already exists' });
-    }
 
     // Update operation object
     const updatedOperation = { OperationName: trimmedOperationName };

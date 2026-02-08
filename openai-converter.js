@@ -164,19 +164,32 @@ function loadStockMapping() {
 }
 
 // Load job operations array from file
-// If extractedPrint is provided, filter operations based on Rule field
-function loadOperations(extractedPrint) {
+// If extractedPrint is provided, filter operations based on Rule field.
+// rawEmailText (optional): when provided, rules are matched against both extractedPrint and raw email
+// so rule-based operations still apply if the model abbreviates the print field.
+function loadOperations(extractedPrint, rawEmailText) {
   const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-  const operationsFile = path.join(DATA_DIR, 'operations.json');
+  // Try bundled config first so we get full rules (e.g. Coles Printing Note); then DATA_DIR for user override
+  const pathsToTry = [
+    path.join(__dirname, 'data', 'operations.json'),
+    path.join(__dirname, 'config', 'operations.json'),
+    path.join(DATA_DIR, 'operations.json')
+  ];
 
-  try {
-    if (fs.existsSync(operationsFile)) {
+  for (const operationsFile of pathsToTry) {
+    try {
+      if (!fs.existsSync(operationsFile)) continue;
       const content = fs.readFileSync(operationsFile, 'utf8');
       const operations = JSON.parse(content);
-      if (Array.isArray(operations) && operations.length > 0) {
-        const printLower = extractedPrint ? String(extractedPrint).toLowerCase() : '';
+      if (!Array.isArray(operations) || operations.length === 0) continue;
 
-        const filteredOperations = operations.filter(op => {
+      const printPart = extractedPrint ? String(extractedPrint).toLowerCase() : '';
+      const rawPart = rawEmailText ? String(rawEmailText).toLowerCase() : '';
+      const textToMatch = [printPart, rawPart].filter(Boolean).join(' ');
+
+      logger.log(`loadOperations: loaded from ${operationsFile}, ${operations.length} ops, textToMatch has 'satin': ${textToMatch.includes('satin')}`);
+
+      const filteredOperations = operations.filter(op => {
           // old format (string) - always include
           if (typeof op === 'string') return true;
 
@@ -184,26 +197,25 @@ function loadOperations(extractedPrint) {
           if (!op || typeof op !== 'object') return false;
           if (!op.Rule || typeof op.Rule !== 'string' || !op.Rule.trim()) return true;
 
-          // if Rule is specified, include only when extracted.print contains rule
+          // if Rule is specified, include when rule appears in extracted print or raw email
           const ruleLower = op.Rule.trim().toLowerCase();
-          return printLower.includes(ruleLower);
+          return textToMatch.includes(ruleLower);
         });
 
-        return filteredOperations.map(op => {
-          if (typeof op === 'string') return { OperationName: op };
-          const result = { OperationName: op.OperationName || '' };
-          if (op.Group && typeof op.Group === 'string' && op.Group.trim()) {
-            result.Group = op.Group.trim();
-          }
-          return result;
-        }).filter(op => op.OperationName && String(op.OperationName).trim() !== '');
-      }
+      return filteredOperations.map(op => {
+        if (typeof op === 'string') return { OperationName: op };
+        const item = { OperationName: op.OperationName || '' };
+        if (op.Group && typeof op.Group === 'string' && op.Group.trim()) {
+          item.Group = op.Group.trim();
+        }
+        return item;
+      }).filter(op => op.OperationName && String(op.OperationName).trim() !== '');
+    } catch (err) {
+      logger.warn(`Failed to load operations from ${operationsFile}:`, err.message);
     }
-  } catch (err) {
-    logger.warn(`Failed to load operations from ${operationsFile}:`, err.message);
   }
 
-  // Return default operations if file doesn't exist or can't be parsed
+  // Return default operations if no file found or parse failed
   return [
     { OperationName: "Preflight" },
     { OperationName: "* PROOF PDF" },
@@ -213,18 +225,22 @@ function loadOperations(extractedPrint) {
 }
 
 // Load section operations array from file
-// If extractedPrint is provided, filter operations based on Rule field
-function loadSectionOperations(extractedPrint) {
+// If extractedFinish is provided, filter operations based on Rule field
+function loadSectionOperations(extractedFinish) {
   const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
   const sectionOperationsFile = path.join(DATA_DIR, 'section-operations.json');
+  
+  logger.log(`loadSectionOperations: file path = ${sectionOperationsFile}, exists = ${fs.existsSync(sectionOperationsFile)}`);
 
   try {
     if (fs.existsSync(sectionOperationsFile)) {
       const content = fs.readFileSync(sectionOperationsFile, 'utf8');
+      logger.log(`loadSectionOperations: file content = ${content.substring(0, 200)}`);
       const sectionOperations = JSON.parse(content);
+      logger.log(`loadSectionOperations: parsed ${sectionOperations.length} operations`);
       if (Array.isArray(sectionOperations) && sectionOperations.length > 0) {
-        // Filter operations based on Rule if extractedPrint is provided
-        const printLower = extractedPrint ? extractedPrint.toLowerCase() : '';
+        // Filter operations based on Rule if extractedFinish is provided
+        const finishLower = extractedFinish ? extractedFinish.toLowerCase() : '';
         
         const filteredOperations = sectionOperations.filter(op => {
           // Handle old format (string) - always include
@@ -237,10 +253,23 @@ function loadSectionOperations(extractedPrint) {
             return true;
           }
           
-          // If Rule is specified, check if it's present in extracted.print
+          // If Rule is specified, check if it's present in extracted.finish
           const ruleLower = op.Rule.trim().toLowerCase();
-          return printLower.includes(ruleLower);
+          return finishLower.includes(ruleLower);
         });
+        
+        logger.log(`loadSectionOperations: filtered ${filteredOperations.length} operations, result = ${JSON.stringify(filteredOperations)}`);
+        
+        // If no operations match after filtering, return default
+        if (filteredOperations.length === 0) {
+          logger.log(`loadSectionOperations: no operations matched rules, returning default`);
+          return [
+            { 
+              OperationName: "CUT - Kongsberg Table Cutter",
+              Group: "Die cut to shape"
+            }
+          ];
+        }
         
         // Map to output format
         return filteredOperations.map(op => {
@@ -263,8 +292,12 @@ function loadSectionOperations(extractedPrint) {
   }
 
   // Return default section operations if file doesn't exist or can't be parsed
+  logger.log(`loadSectionOperations: returning default - file not found or parse error`);
   return [
-    { OperationName: "Square Cut" }
+    { 
+      OperationName: "CUT - Kongsberg Table Cutter",
+      Group: "Square Cut"
+    }
   ];
 }
 
@@ -369,11 +402,11 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
           SectionSizeHeight: 0,
           FoldCatalog: "Flat Product",
           Pages: 2,
-          SectionOperations: loadSectionOperations(extracted.print),
+          SectionOperations: loadSectionOperations(extracted.finish),
           SideOperations: []
         }
       ],
-      JobOperations: loadOperations(extracted.print)
+      JobOperations: loadOperations(extracted.print, rawText)
     },
     SelectedQuantity: {
       Quantity: 0,
@@ -478,18 +511,25 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
   // Base selected quantity values
   final.SelectedQuantity.Quantity = Number(quantity);
   
-  // Handle kinds: if we have multiple kinds, use AdvancedKinds; otherwise set Kinds appropriately
+  // Handle kinds: use AdvancedKinds whenever we have at least one kind (single or multiple)
   logger.log(`DEBUG: kindsArray.length=${kindsArray.length}, extracted.kinds=${JSON.stringify(extracted.kinds)}`);
-  if (kindsArray.length > 1) {
-    // Multiple kinds - use AdvancedKinds structure
+  if (kindsArray.length >= 1) {
+    // One or more kinds - always use AdvancedKinds structure
     final.SelectedQuantity.Kinds = 0;
-    
+
     const advKinds = extracted.kinds.map((kindObj, index) => {
-      // Use the full kind name from kindObj.kind, not just the normalized array value
-      const kindName = (kindObj && typeof kindObj === 'object' && kindObj.kind) 
-        ? String(kindObj.kind).trim() 
+      const kindName = (kindObj && typeof kindObj === 'object' && kindObj.kind)
+        ? String(kindObj.kind).trim()
         : (kindsArray[index] || `Kind-${index + 1}`);
-      const qty = Number(kindObj.count || 0);
+      
+      // Special case: if there's exactly ONE kind and count is 0 or missing, use total quantity
+      let qty;
+      if (extracted.kinds.length === 1 && (!kindObj.count || kindObj.count === 0)) {
+        qty = Number(quantity ?? 0);
+      } else {
+        qty = Number(kindObj.count ?? 0);
+      }
+      
       logger.log(`DEBUG: Kind ${index}: name=${kindName}, qty=${qty}`);
       return {
         Name: kindName,
@@ -506,17 +546,11 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
       Kinds: advKinds
     };
 
-    // Update total quantity to sum of individual kind quantities (don't multiply, just sum)
     const sumAdv = advKinds.reduce((s, k) => s + (Number(k.Quantity) || 0), 0);
     if (sumAdv > 0) {
       final.SelectedQuantity.Quantity = sumAdv;
-    }
-  } else if (kindsArray.length === 1) {
-    // Single kind - set Kinds to 1, use regular quantity
-    final.SelectedQuantity.Kinds = 1;
-    // If the kind has a count, use it; otherwise use the total quantity
-    if (extracted.kinds && extracted.kinds[0] && extracted.kinds[0].count) {
-      final.SelectedQuantity.Quantity = Number(extracted.kinds[0].count);
+    } else {
+      final.SelectedQuantity.Quantity = Number(quantity);
     }
   } else {
     // No kinds - set Kinds to 1, use total quantity

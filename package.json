@@ -7,7 +7,9 @@
     "start:smtp": "node smtp-server.js",
     "start:worker": "node worker.js",
     "start:webhook": "node webhook-server.js",
-    "start:admin": "node admin-server.js"
+    "start:admin": "node admin-server.js",
+    "test:payload": "node test-email-to-payload.js",
+    "test:payload:sample": "node test-email-to-payload.js data/sample-emails/coles-rfq-q14242.txt"
   },
   "dependencies": {
     "better-sqlite3": "^8.2.0",
