@@ -468,11 +468,8 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
       }
       // else: keep the default ProcessFront that was already set
 
-      // If single-sided, set ProcessReverse to None; otherwise use mapping value (or default if mapping is null/None)
-      if (isSingleSided) {
-        final.CustomProduct.Sections[0].ProcessReverse = 'None';
-        logger.log("DEBUG: Set ProcessReverse to None (single-sided)");
-      } else if (mappedData.processReverse && mappedData.processReverse !== 'None') {
+      // Set ProcessReverse from mapping (will be overridden by single-sided check if needed)
+      if (mappedData.processReverse && mappedData.processReverse !== 'None') {
         final.CustomProduct.Sections[0].ProcessReverse = mappedData.processReverse;
         logger.log("DEBUG: Set ProcessReverse from mapping to:", mappedData.processReverse);
       } else {
@@ -482,6 +479,12 @@ function buildFinalJsonFromExtracted(extracted, rawText) {
       
       stockMappingUsed = true;
     }
+  }
+
+  // Apply single-sided logic AFTER stock mapping (overrides mapping if single-sided)
+  if (isSingleSided) {
+    final.CustomProduct.Sections[0].ProcessReverse = 'None';
+    logger.log("DEBUG: Set ProcessReverse to None (single-sided detected)");
   }
 
   // Titles/notes
